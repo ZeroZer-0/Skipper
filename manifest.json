@@ -1,0 +1,45 @@
+{
+  "manifest_version": 3,
+  "name": "Skipper",
+  "version": "2.0",
+  "description": "Automatically skips intros, recaps, and moves to the next episode on supported streaming sites.",
+  "permissions": ["storage"],
+  "host_permissions": [
+    "*://*.netflix.com/*",
+    "*://*.disneyplus.com/*",
+    "*://*.hulu.com/*",
+    "*://*.crunchyroll.com/*",
+    "*://*.paramountplus.com/*",
+    "*://*.amazon.com/*",
+    "*://*.primevideo.com/*"
+  ],
+  "action": {
+    "default_title": "Skipper",
+    "default_popup": "popup/popup.html"
+  },
+  "content_scripts": [
+  {
+    "matches": [
+      "*://*.netflix.com/*",
+      "*://*.disneyplus.com/*",
+      "*://*.hulu.com/*",
+      "*://*.crunchyroll.com/*",
+      "*://*.paramountplus.com/*",
+      "*://*.amazon.com/*",
+      "*://*.primevideo.com/*"
+    ],
+    "js": [
+      "content-scripts/content-script.js"
+    ]
+  }
+],
+  "icons": {
+    "48": "icons/icon48.png",
+    "96": "icons/icon96.png"
+  },
+  "browser_specific_settings": {
+    "gecko": {
+      "id": "{933ca259-d87c-4c7b-97fb-e91acdd02475}"
+    }
+  }
+}
