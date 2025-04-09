@@ -28,7 +28,7 @@ const siteSelectors = {
   },
   crunchyroll: {
     domains: ['crunchyroll.com'],
-    skipAllButton: '[data-testid="skip-recap-button"]'
+    skipAllButton: '[data-testid="SkipIntroText"]',
   }, 
   paramountPlus: {
     domains: ['paramountplus.com'],
