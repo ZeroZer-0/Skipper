@@ -1,0 +1,59 @@
+{
+  "netflix": {
+    "name": "Netflix",
+    "domains": ["netflix.com"],
+    "buttons": [
+      { "label": "Skip Intro",   "selector": "button[data-uia=\"player-skip-intro\"]" },
+      { "label": "Skip Recap",   "selector": "button[data-uia=\"player-skip-recap\"]" },
+      { "label": "Next Episode", "selector": "button[data-uia=\"player-skip-seamless-button\"]" }
+    ]
+  },
+
+  "disneyPlus": {
+    "name": "Disney+",
+    "domains": ["disneyplus.com"],
+    "buttons": [
+      { "label": "Skip Recap",        "selector": "button.skip__button[aria-label=\"SKIP RECAP\"]" },
+      { "label": "Skip Intro",        "selector": "button.skip__button[aria-label=\"SKIP INTRO\"]" },
+      { "label": "Next Episode",      "selector": "button.skip__button:not([aria-label])" },
+      { "label": "Next Episode (Alt)","selector": "button[data-testid=\"icon-restart\"]" }
+    ]
+  },
+
+  "hulu": {
+    "name": "Hulu",
+    "domains": ["hulu.com"],
+    "buttons": [
+      { "label": "Skip Intro / Recap", "selector": "button[data-automationid=\"player-skip-button\"]" },
+      { "label": "Next Episode",       "selector": "button[data-testid=\"next-episode-button\"]" }
+    ]
+  },
+
+  "crunchyroll": {
+    "name": "Crunchyroll",
+    "domains": ["crunchyroll.com", "static.crunchyroll.com"],
+    "buttons": [
+      { "label": "Skip Intro", "selector": "[data-testid=\"SkipIntroText\"]" },
+      { "label": "Skip Outro", "selector": "[data-testid=\"skipButton\"]" },
+      { "label": "Next Episode", "selector": "[data-testid=\"nextEpisodeButton\"]" }
+    ]
+  },
+
+  "paramountPlus": {
+    "name": "Paramount+",
+    "domains": ["paramountplus.com"],
+    "buttons": [
+      { "label": "Skip Intro",   "selector": "button.skip-button" },
+      { "label": "Next Episode", "selector": "button.play-button" }
+    ]
+  },
+
+  "amazonPrime": {
+    "name": "Amazon Prime Video",
+    "domains": ["amazon.com", "primevideo.com"],
+    "buttons": [
+      { "label": "Skip Intro",   "selector": "button[class*=\"atvwebplayersdk-skipelement-button\"]" },
+      { "label": "Next Episode", "selector": "div[class*=\"atvwebplayersdk-nextupcard-button\"]" }
+    ]
+  }
+}

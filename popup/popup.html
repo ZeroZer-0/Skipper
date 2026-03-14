@@ -3,30 +3,315 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Skipper Extension</title>
+  <title>Skipper</title>
   <style>
-    #siteOptions {
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      font-family: system-ui, -apple-system, sans-serif;
+      width: 310px;
+      background: #111;
+      color: #ddd;
+      font-size: 13px;
+    }
+
+    /* ── Header ── */
+    .header {
+      background: #1a1a1a;
+      padding: 12px 14px 10px;
+      border-bottom: 1px solid #222;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+    .header h1 { font-size: 16px; font-weight: 700; color: #fff; letter-spacing: 0.5px; }
+    .version { font-size: 10px; color: #555; }
+
+    /* ── Sections ── */
+    .section { padding: 10px 14px; border-bottom: 1px solid #1e1e1e; }
+    .section-title {
+      font-size: 10px;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 1px;
+      color: #555;
+      margin-bottom: 8px;
+    }
+
+    /* ── Toggle rows ── */
+    .toggle-row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 5px 0;
+    }
+    .toggle-label { color: #ccc; }
+    .toggle-sub { font-size: 11px; color: #666; margin-top: 1px; }
+
+    /* Toggle switch */
+    .switch { position: relative; width: 36px; height: 20px; flex-shrink: 0; }
+    .switch input { opacity: 0; width: 0; height: 0; }
+    .slider {
+      position: absolute; inset: 0;
+      background: #333; border-radius: 20px; cursor: pointer;
+      transition: background 0.2s;
+    }
+    .slider::before {
+      content: '';
+      position: absolute;
+      width: 14px; height: 14px;
+      left: 3px; top: 3px;
+      background: #888; border-radius: 50%;
+      transition: transform 0.2s, background 0.2s;
+    }
+    input:checked + .slider { background: #1e4d1e; }
+    input:checked + .slider::before { transform: translateX(16px); background: #4caf50; }
+    .debug-switch input:checked + .slider { background: #3d2a00; }
+    .debug-switch input:checked + .slider::before { background: #ff9800; }
+
+    /* ── Site list ── */
+    .site-row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 5px 6px;
+      border-radius: 4px;
+      margin-bottom: 2px;
+      transition: background 0.1s;
+    }
+    .site-row:hover { background: #191919; }
+    .site-name { font-weight: 500; color: #ccc; }
+    .site-domains { font-size: 10px; color: #555; margin-top: 1px; }
+
+    /* ── Debug panel ── */
+    #debugPanel { display: none; }
+    .debug-header {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      font-size: 11px;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 1px;
+      color: #ff9800;
+      margin-bottom: 8px;
+    }
+    .debug-dot {
+      width: 7px; height: 7px;
+      border-radius: 50%;
+      background: #ff9800;
+      animation: pulse 1.5s infinite;
+    }
+    @keyframes pulse {
+      0%, 100% { opacity: 1; }
+      50%       { opacity: 0.3; }
+    }
+
+    .site-info-line { font-size: 12px; color: #888; margin-bottom: 8px; }
+    .site-info-line strong { color: #ddd; }
+
+    /* Button status list */
+    .btn-list { margin-bottom: 8px; }
+    .btn-row {
+      display: flex;
+      align-items: center;
+      gap: 7px;
+      padding: 3px 0;
+      font-size: 12px;
+      color: #aaa;
+    }
+    .indicator {
+      width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0;
+    }
+    .ind-found     { background: #4caf50; }
+    .ind-not-found { background: #333; border: 1px solid #444; }
+    .ind-custom    { background: #2196f3; }
+    .found-label   { color: #ddd; }
+
+    /* Action buttons */
+    .actions { display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 8px; }
+    button {
+      background: #1e1e1e;
+      color: #ccc;
+      border: 1px solid #333;
+      border-radius: 5px;
+      padding: 6px 10px;
+      cursor: pointer;
+      font-size: 12px;
+      flex: 1;
+      min-width: 80px;
+      transition: background 0.15s, border-color 0.15s;
+    }
+    button:hover { background: #252525; border-color: #444; }
+    button:active { transform: scale(0.97); }
+    button.btn-green  { color: #4caf50; border-color: #1e4d1e; }
+    button.btn-green:hover  { background: #1a3a1a; border-color: #4caf50; }
+    button.btn-orange { color: #ff9800; border-color: #3d2a00; }
+    button.btn-orange:hover { background: #2a1e00; border-color: #ff9800; }
+    button.btn-red    { color: #f44336; border-color: #3d1010; }
+    button.btn-red:hover    { background: #2a0e0e; border-color: #f44336; }
+
+    /* Picker status bar */
+    .picker-active-bar {
       display: none;
-      margin-top: 10px;
+      background: #2a1e00;
+      border: 1px dashed #ff9800;
+      border-radius: 5px;
+      padding: 7px 10px;
+      font-size: 12px;
+      color: #ff9800;
+      margin-bottom: 8px;
+      line-height: 1.6;
     }
-    .site-options {
-      margin-bottom: 5px;
+    .picker-active-bar.visible { display: block; }
+
+    /* Picked-element save panel */
+    .picked-panel {
+      display: none;
+      background: #0d200d;
+      border: 1px solid #2e5e2e;
+      border-radius: 5px;
+      padding: 8px 10px;
+      margin-bottom: 8px;
     }
+    .picked-panel.visible { display: block; }
+    .picked-title { font-size: 11px; font-weight: 600; color: #4caf50; margin-bottom: 6px; }
+    .picked-selector {
+      font-family: monospace; font-size: 10px; color: #888;
+      word-break: break-all; margin-bottom: 6px;
+      padding: 4px 6px; background: #0a180a; border-radius: 3px;
+    }
+    .picked-panel input[type="text"] {
+      width: 100%;
+      background: #111; color: #ddd;
+      border: 1px solid #333; border-radius: 4px;
+      padding: 5px 8px; font-size: 12px;
+      margin-bottom: 6px;
+    }
+    .picked-panel input[type="text"]::placeholder { color: #444; }
+    .picked-panel input[type="text"]:focus {
+      outline: none; border-color: #4caf50;
+    }
+    .picked-actions { display: flex; gap: 6px; }
+    .picked-actions button { flex: 1; }
+
+    /* Custom buttons list */
+    .custom-list-title { font-size: 11px; color: #555; margin: 8px 0 4px; }
+    .custom-btn-row {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      padding: 4px 6px;
+      border-radius: 4px;
+      font-size: 12px;
+    }
+    .custom-btn-row:hover { background: #191919; }
+    .custom-btn-info { flex: 1; overflow: hidden; }
+    .custom-btn-label  { color: #ccc; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .custom-btn-sel    { font-family: monospace; font-size: 10px; color: #555; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .custom-btn-site   { font-size: 10px; color: #444; }
+    .del-btn {
+      flex: none;
+      background: none; border: none;
+      color: #4a1515; font-size: 14px;
+      cursor: pointer; padding: 2px 5px;
+      border-radius: 3px;
+      transition: color 0.15s;
+    }
+    .del-btn:hover { color: #f44336; background: none; }
+
+    /* Status bar */
+    #statusBar {
+      padding: 7px 14px;
+      font-size: 11px;
+      color: #555;
+      min-height: 28px;
+      line-height: 1.4;
+    }
+    #statusBar.ok  { color: #4caf50; }
+    #statusBar.err { color: #f44336; }
   </style>
 </head>
 <body>
-  <h1>Skipper Settings</h1>
-  <label>
-    <input type="checkbox" id="globalToggle" /> Enable Extension
-  </label>
-  <br />
-  <label>
-    <input type="checkbox" id="debugToggle" /> Enable Debug Mode
-  </label>
-  <div id="siteOptions">
-    <h2>Site Options</h2>
-    <!-- Site toggles will be generated dynamically -->
+
+  <div class="header">
+    <h1>Skipper</h1>
+    <span class="version">v3.0</span>
   </div>
+
+  <!-- Global toggles -->
+  <div class="section">
+    <div class="toggle-row">
+      <div>
+        <div class="toggle-label">Enable Extension</div>
+      </div>
+      <label class="switch">
+        <input type="checkbox" id="globalToggle" />
+        <span class="slider"></span>
+      </label>
+    </div>
+    <div class="toggle-row">
+      <div>
+        <div class="toggle-label">Debug Mode</div>
+        <div class="toggle-sub">Highlight buttons in green — don't click them</div>
+      </div>
+      <label class="switch debug-switch">
+        <input type="checkbox" id="debugToggle" />
+        <span class="slider"></span>
+      </label>
+    </div>
+  </div>
+
+  <!-- Per-site toggles -->
+  <div class="section" id="siteOptions" style="display:none">
+    <div class="section-title">Sites</div>
+    <!-- populated by popup.js -->
+  </div>
+
+  <!-- Debug panel -->
+  <div class="section" id="debugPanel">
+    <div class="debug-header">
+      <span class="debug-dot"></span>
+      Debug Panel
+    </div>
+
+    <div class="site-info-line" id="debugSiteInfo">Loading…</div>
+    <div class="btn-list" id="detectedButtonsList"></div>
+
+    <div class="actions">
+      <button class="btn-green"  id="clickAllBtn"    style="display:none">Click All Now</button>
+      <button class="btn-orange" id="pickElementBtn">Pick Element</button>
+    </div>
+
+    <!-- Picker-active notice -->
+    <div class="picker-active-bar" id="pickerActiveBar">
+      Picker active — click any element on the page.<br>
+      <small style="color:#aa7700">Press Escape to cancel.</small>
+      <div style="margin-top:6px">
+        <button class="btn-red" id="cancelPickerBtn" style="flex:none;min-width:0;padding:4px 10px">Cancel</button>
+      </div>
+    </div>
+
+    <!-- Element-save panel (appears after picking) -->
+    <div class="picked-panel" id="pickedPanel">
+      <div class="picked-title">Element captured — give it a label to save it</div>
+      <div class="picked-selector" id="pickedSelector"></div>
+      <input type="text" id="pickedLabel" placeholder="Label, e.g. Skip Intro" />
+      <div class="picked-actions">
+        <button class="btn-green" id="savePickedBtn">Save</button>
+        <button id="discardPickedBtn">Discard</button>
+      </div>
+    </div>
+
+    <!-- User-added custom buttons -->
+    <div id="customButtonsSection" style="display:none">
+      <div class="custom-list-title">Custom buttons</div>
+      <div id="customButtonsList"></div>
+    </div>
+  </div>
+
+  <div id="statusBar"></div>
+
   <script src="popup.js"></script>
 </body>
 </html>
