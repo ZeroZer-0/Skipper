@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "Skipper",
-  "version": "3.0",
+  "version": "4.0",
   "description": "Automatically skips intros, recaps, and moves to the next episode on supported streaming sites.",
 
   "permissions": ["storage", "tabs", "activeTab"],
@@ -14,8 +14,17 @@
     "*://*.static.crunchyroll.com/*",
     "*://*.paramountplus.com/*",
     "*://*.amazon.com/*",
-    "*://*.primevideo.com/*"
+    "*://*.primevideo.com/*",
+    "*://*.max.com/*",
+    "*://*.peacocktv.com/*",
+    "*://*.tv.apple.com/*",
+    "*://*.tubitv.com/*",
+    "https://raw.githubusercontent.com/*"
   ],
+
+  "background": {
+    "service_worker": "background.js"
+  },
 
   "action": {
     "default_title": "Skipper",
@@ -32,7 +41,11 @@
         "*://*.static.crunchyroll.com/*",
         "*://*.paramountplus.com/*",
         "*://*.amazon.com/*",
-        "*://*.primevideo.com/*"
+        "*://*.primevideo.com/*",
+        "*://*.max.com/*",
+        "*://*.peacocktv.com/*",
+        "*://*.tv.apple.com/*",
+        "*://*.tubitv.com/*"
       ],
       "js": ["content-scripts/content-script.js"],
       "all_frames": true,

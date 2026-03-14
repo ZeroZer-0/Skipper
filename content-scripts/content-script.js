@@ -1,30 +1,42 @@
 // content-scripts/content-script.js
-// Runs in the main frame AND all sub-frames (all_frames: true in manifest).
-// This is the key fix for sites like Crunchyroll whose player lives inside an iframe.
+// Runs in the main frame AND every sub-frame (all_frames: true).
 
 if (typeof browser === 'undefined') {
   window.browser = chrome;
 }
 
-// ─── State ───────────────────────────────────────────────────────────────────
+// ─── State ────────────────────────────────────────────────────────────────────
 
 const IS_TOP_FRAME = window === window.top;
 
-let sitesConfig    = null;   // Loaded from sites.json
+let sitesConfig    = null;
 let currentSiteId  = null;
-let currentSite    = null;   // The matching entry from sitesConfig
-let customButtons  = {};     // { siteId: [{label, selector}] } — user-added via picker
+let currentSite    = null;
+let customButtons  = {};    // { siteId: [{label, selector}] }
+let buttonToggles  = {};    // { siteId: { label: boolean } }
 let settings = {
   extensionEnabled: true,
   debugMode:        false,
   pickerMode:       false,
 };
-let intervalId    = null;
+
+// Health tracking — written to storage in batches.
+let healthCache = {};
+let healthDirty = false;
+
+// Click throttle.
 let lastClickTime = 0;
 
-// ─── Utilities ───────────────────────────────────────────────────────────────
+// Pending delayed clicks — keyed by selector.
+const pendingClicks = new Map();
 
-/** Try to get the top-level page hostname. Fails silently for cross-origin frames. */
+// ─── Cross-frame aggregation (top frame only) ─────────────────────────────────
+// Each sub-frame posts its detected buttons up to the top frame via postMessage.
+// The top frame stores them here so the popup can see a merged picture.
+const frameDetections = new Map(); // frameUrl → [{label, selector, found}]
+
+// ─── Utilities ────────────────────────────────────────────────────────────────
+
 function getTopHostname() {
   try { return window.top.location.hostname; } catch (_) { return null; }
 }
@@ -33,36 +45,59 @@ function log(...args) {
   if (settings.debugMode) console.log('[Skipper]', ...args);
 }
 
-/** Returns all buttons for the active site: base config + user-added custom ones. */
-function allButtons() {
-  const base   = currentSite?.buttons  || [];
+/** All active buttons: base config filtered by per-button toggles, plus custom buttons. */
+function activeButtons() {
+  const base   = (currentSite?.buttons   || []).filter(btn => {
+    const siteToggles = buttonToggles[currentSiteId] || {};
+    return siteToggles[btn.label] !== false; // default enabled
+  });
   const custom = customButtons[currentSiteId] || [];
   return [...base, ...custom];
 }
 
-/** querySelector with graceful failure for malformed selectors. */
-function safeQuery(sel) {
-  try { return document.querySelector(sel); }
-  catch (e) { log('Bad selector:', sel, e.message); return null; }
+/** All buttons (including disabled) — used by the debug panel to show toggle state. */
+function allButtons() {
+  const base   = currentSite?.buttons   || [];
+  const custom = customButtons[currentSiteId] || [];
+  return [...base, ...custom];
+}
+
+// ─── DOM querying (with shadow DOM support) ───────────────────────────────────
+
+function queryInTree(root, selector) {
+  const direct = root.querySelector(selector);
+  if (direct) return direct;
+
+  // Walk shadow roots (only when the site config requests it — it's expensive).
+  if (currentSite?.searchShadowDom) {
+    for (const el of root.querySelectorAll('*')) {
+      if (el.shadowRoot) {
+        const found = queryInTree(el.shadowRoot, selector);
+        if (found) return found;
+      }
+    }
+  }
+  return null;
+}
+
+function safeQuery(selector) {
+  try { return queryInTree(document, selector); }
+  catch (e) { log('Bad selector:', selector, e.message); return null; }
 }
 
 // ─── Site detection ───────────────────────────────────────────────────────────
 
-/**
- * Walk the config and return [siteId, siteObj] for the first match.
- * Checks both the current frame's hostname AND the top-level hostname so that
- * content injected inside same-origin iframes (e.g. Crunchyroll's player) is
- * detected correctly.
- */
 function detectSite() {
   if (!sitesConfig) return null;
   const here = window.location.hostname;
   const top  = getTopHostname();
 
   for (const [id, site] of Object.entries(sitesConfig)) {
-    const domains = site.domains || [];
-    if (domains.some(d => here.includes(d)))            return [id, site];
-    if (top && domains.some(d => top.includes(d)))      return [id, site];
+    // Skip metadata-only keys (like "_comment")
+    if (!site?.domains) continue;
+    const domains = site.domains;
+    if (domains.some(d => here.includes(d)))       return [id, site];
+    if (top && domains.some(d => top.includes(d))) return [id, site];
   }
   return null;
 }
@@ -82,57 +117,162 @@ function clearHighlights() {
 function applyHighlights() {
   clearHighlights();
   allButtons().forEach(btn => {
+    const siteToggles = buttonToggles[currentSiteId] || {};
+    const enabled = siteToggles[btn.label] !== false;
     const el = safeQuery(btn.selector);
     if (el) {
-      el.style.outline      = '3px solid #00e676';
+      // Green = enabled, grey outline = disabled (would not auto-click)
+      el.style.outline       = enabled ? '3px solid #00e676' : '3px solid #555';
       el.style.outlineOffset = '2px';
       el.setAttribute(HL_ATTR, btn.label);
-      log(`Highlighted: ${btn.label}`);
     }
   });
+  broadcastDetections(); // keep cross-frame data fresh
 }
 
-// ─── Auto-click ──────────────────────────────────────────────────────────────
+// ─── Click logic ──────────────────────────────────────────────────────────────
+
+function scheduleClick(btn, el) {
+  if (pendingClicks.has(btn.selector)) return; // already queued
+  const delay = btn.delayMs || 0;
+
+  const timerId = setTimeout(() => {
+    pendingClicks.delete(btn.selector);
+    // Re-query in case the DOM changed during the delay.
+    const current = safeQuery(btn.selector);
+    if (current) {
+      log(`Clicking (${delay}ms delay): ${btn.label}`);
+      current.click();
+      lastClickTime = Date.now();
+      updateHealth(btn.label);
+    }
+  }, delay);
+
+  pendingClicks.set(btn.selector, timerId);
+}
 
 function runClicks() {
   const now = Date.now();
-  // 10-second cooldown so we don't spam-click repeatedly.
-  if (now - lastClickTime < 10_000) return;
+  if (now - lastClickTime < 10_000) return; // 10-second cooldown
 
-  let clicked = false;
-  allButtons().forEach(btn => {
+  activeButtons().forEach(btn => {
     const el = safeQuery(btn.selector);
-    if (el) {
-      log(`Clicking: ${btn.label}`);
-      el.click();
-      clicked = true;
-    }
+    if (el) scheduleClick(btn, el);
   });
-  if (clicked) lastClickTime = Date.now();
+
+  broadcastDetections();
 }
 
-/** Bypass the cooldown — used by the debug "Click All Now" button. */
+/** Bypass cooldown — used by the debug "Click All Now" action. */
 function forceClick() {
   lastClickTime = 0;
+  pendingClicks.forEach(clearTimeout);
+  pendingClicks.clear();
   runClicks();
 }
 
-// ─── Interval helpers ─────────────────────────────────────────────────────────
+// ─── Selector health tracking ─────────────────────────────────────────────────
 
-function stopInterval() {
-  if (intervalId !== null) { clearInterval(intervalId); intervalId = null; }
+function updateHealth(label) {
+  const key = `${currentSiteId}__${label}`;
+  const now = Date.now();
+  // Only mark dirty if the stored value is absent or stale by > 1 hour.
+  if (!healthCache[key] || now - healthCache[key] > 3_600_000) {
+    healthCache[key] = now;
+    healthDirty = true;
+  }
 }
 
-function startAutoMode() {
-  stopInterval();
-  runClicks();
-  intervalId = setInterval(runClicks, 500);
+// Flush health cache to storage every 60 s.
+setInterval(async () => {
+  if (!healthDirty) return;
+  try {
+    await browser.storage.local.set({ healthData: healthCache });
+    healthDirty = false;
+  } catch (_) {}
+}, 60_000);
+
+// ─── Cross-frame detection broadcasting ───────────────────────────────────────
+
+function broadcastDetections() {
+  if (IS_TOP_FRAME || !currentSiteId) return;
+  const detected = allButtons().map(btn => ({
+    label:    btn.label,
+    selector: btn.selector,
+    found:    !!safeQuery(btn.selector),
+    custom:   !!btn.custom,
+    enabled:  (buttonToggles[currentSiteId] || {})[btn.label] !== false,
+  }));
+
+  try {
+    window.top.postMessage({
+      type:     'skipper-frame-detection',
+      siteId:   currentSiteId,
+      frameUrl: window.location.href,
+      detected,
+    }, '*');
+  } catch (_) {
+    try {
+      window.parent.postMessage({
+        type:     'skipper-frame-detection',
+        siteId:   currentSiteId,
+        frameUrl: window.location.href,
+        detected,
+      }, '*');
+    } catch (_) {}
+  }
 }
 
-function startDebugMode() {
-  stopInterval();
-  applyHighlights();
-  intervalId = setInterval(applyHighlights, 500);
+// Top frame: collect cross-frame detections.
+if (IS_TOP_FRAME) {
+  window.addEventListener('message', e => {
+    if (e.data?.type !== 'skipper-frame-detection') return;
+    frameDetections.set(e.data.frameUrl, {
+      siteId:   e.data.siteId,
+      detected: e.data.detected,
+    });
+  });
+}
+
+// ─── Observer + interval (replacing the old plain setInterval) ────────────────
+
+let mutationObserver  = null;
+let fallbackIntervalId = null;
+let debounceTimer     = null;
+
+function onMutation() {
+  clearTimeout(debounceTimer);
+  debounceTimer = setTimeout(runCheck, 100);
+}
+
+function runCheck() {
+  if (!currentSiteId || !settings.extensionEnabled) return;
+  if (settings.pickerMode) return;
+  if (settings.debugMode) applyHighlights();
+  else runClicks();
+}
+
+function startObserving() {
+  stopObserving();
+  mutationObserver = new MutationObserver(onMutation);
+  mutationObserver.observe(document.documentElement, {
+    childList:       true,
+    subtree:         true,
+    attributes:      true,
+    attributeFilter: ['class', 'style', 'hidden', 'aria-hidden', 'data-testid'],
+  });
+  // Safety-net interval in case the observer misses purely CSS visibility changes.
+  fallbackIntervalId = setInterval(runCheck, 5_000);
+  runCheck(); // immediate first pass
+}
+
+function stopObserving() {
+  mutationObserver?.disconnect();
+  mutationObserver = null;
+  if (fallbackIntervalId !== null) { clearInterval(fallbackIntervalId); fallbackIntervalId = null; }
+  clearTimeout(debounceTimer);
+  pendingClicks.forEach(clearTimeout);
+  pendingClicks.clear();
 }
 
 // ─── Element picker ───────────────────────────────────────────────────────────
@@ -140,22 +280,15 @@ function startDebugMode() {
 let pickerActive  = false;
 let pickerHovered = null;
 
-/**
- * Generate the most stable CSS selector we can for a given element.
- * Priority: data-* attributes > id > aria-label > class-based.
- */
 function generateSelector(el) {
-  const stableDataAttrs = [
-    'data-testid', 'data-automationid', 'data-uia', 'data-qa', 'data-id',
-  ];
+  const stableDataAttrs = ['data-testid', 'data-automationid', 'data-uia', 'data-qa', 'data-id'];
 
   for (const attr of stableDataAttrs) {
     const val = el.getAttribute(attr);
     if (!val) continue;
     const s = `[${attr}="${val}"]`;
     try {
-      const count = document.querySelectorAll(s).length;
-      return count <= 3 ? s : `${el.tagName.toLowerCase()}${s}`;
+      return document.querySelectorAll(s).length <= 3 ? s : `${el.tagName.toLowerCase()}${s}`;
     } catch (_) {}
   }
 
@@ -166,24 +299,18 @@ function generateSelector(el) {
 
   const aria = el.getAttribute('aria-label');
   if (aria) {
-    const escaped = aria.replace(/"/g, '\\"');
-    const s = `${el.tagName.toLowerCase()}[aria-label="${escaped}"]`;
+    const s = `${el.tagName.toLowerCase()}[aria-label="${aria.replace(/"/g, '\\"')}"]`;
     try { if (document.querySelectorAll(s).length <= 3) return s; } catch (_) {}
   }
 
-  // Class-based — filter out auto-generated class names.
   const stableClasses = [...el.classList].filter(c =>
     c.length > 2 &&
     !/^\d/.test(c) &&
-    // Skip React/CSS-module hashes like "sc-abc123" or "abc-a1b2c3d4"
     !/^[a-z]+-[a-z0-9]{5,}$/.test(c) &&
-    // Skip camelCase-mixed names that look machine-generated
     !(/[a-z][A-Z]/.test(c) && /[A-Z][a-z]/.test(c) && c.length > 12)
   );
-
   if (stableClasses.length > 0) {
-    const tag = el.tagName.toLowerCase();
-    const s = `${tag}.${stableClasses.slice(0, 2).join('.')}`;
+    const s = `${el.tagName.toLowerCase()}.${stableClasses.slice(0, 2).join('.')}`;
     try { if (document.querySelectorAll(s).length <= 5) return s; } catch (_) {}
   }
 
@@ -195,7 +322,6 @@ function generateSelector(el) {
 function pickerMouseover(e) {
   e.stopPropagation();
   if (pickerHovered && pickerHovered !== e.target) clearPickerHover();
-
   pickerHovered = e.target;
   pickerHovered.style.outline       = '2px dashed #ff6d00';
   pickerHovered.style.outlineOffset = '2px';
@@ -234,12 +360,8 @@ function pickerClick(e) {
     frameUrl: window.location.href,
   };
 
-  // Persist result so the popup can read it when it re-opens.
   browser.storage.local.set({ pickerMode: false, lastPickedButton: result });
-
-  // Also push to the popup immediately if it's currently open.
   browser.runtime.sendMessage(result).catch(() => {});
-
   showPickerToast(selector);
 }
 
@@ -251,36 +373,34 @@ function pickerKeydown(e) {
   }
 }
 
-/** Brief on-page confirmation toast — tells the user to open Skipper to save. */
 function showPickerToast(selector) {
   const el = document.createElement('div');
   el.style.cssText = `
-    position: fixed; top: 16px; right: 16px; z-index: 2147483647;
-    background: #121212; color: #4caf50;
-    border: 2px solid #4caf50; border-radius: 8px;
-    padding: 10px 14px; font-family: system-ui, sans-serif; font-size: 13px;
-    max-width: 320px; word-break: break-all;
-    box-shadow: 0 4px 24px rgba(0,0,0,0.6); line-height: 1.5;
+    position:fixed;top:16px;right:16px;z-index:2147483647;
+    background:#121212;color:#4caf50;border:2px solid #4caf50;border-radius:8px;
+    padding:10px 14px;font-family:system-ui,sans-serif;font-size:13px;
+    max-width:320px;word-break:break-all;line-height:1.5;
+    box-shadow:0 4px 24px rgba(0,0,0,.6);
   `;
   el.innerHTML = `
     <strong>Element captured!</strong><br>
     <span style="color:#aaa;font-size:11px;font-family:monospace">${selector}</span><br>
-    <span style="color:#888;font-size:11px">Open Skipper to label and save it.</span>
+    <span style="color:#777;font-size:11px">Open Skipper to label and save it.</span>
   `;
   document.body.appendChild(el);
-  setTimeout(() => el.remove(), 5000);
+  setTimeout(() => el.remove(), 5_000);
 }
 
 function activatePicker() {
   if (pickerActive) return;
   pickerActive = true;
-  stopInterval();
+  stopObserving();
   clearHighlights();
   document.addEventListener('mouseover', pickerMouseover, true);
   document.addEventListener('mouseout',  pickerMouseout,  true);
   document.addEventListener('click',     pickerClick,     true);
   document.addEventListener('keydown',   pickerKeydown,   true);
-  log('Picker activated');
+  log('Picker activated in', IS_TOP_FRAME ? 'main frame' : 'iframe');
 }
 
 function deactivatePicker() {
@@ -298,21 +418,22 @@ function deactivatePicker() {
 
 function applySettings() {
   if (!settings.extensionEnabled || !currentSiteId) {
-    stopInterval();
+    stopObserving();
     clearHighlights();
     deactivatePicker();
     return;
   }
 
   if (settings.pickerMode) {
+    stopObserving();
     activatePicker();
   } else if (settings.debugMode) {
     deactivatePicker();
-    startDebugMode();
+    startObserving();
   } else {
     deactivatePicker();
     clearHighlights();
-    startAutoMode();
+    startObserving();
   }
 }
 
@@ -322,9 +443,8 @@ browser.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
   switch (msg.action) {
 
     case 'updateSettings':
-      if (msg.settings.customButtons !== undefined) {
-        customButtons = msg.settings.customButtons;
-      }
+      if (msg.settings.customButtons  !== undefined) customButtons  = msg.settings.customButtons;
+      if (msg.settings.buttonToggles  !== undefined) buttonToggles  = msg.settings.buttonToggles;
       Object.assign(settings, msg.settings);
       applySettings();
       break;
@@ -341,70 +461,100 @@ browser.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
       break;
 
     case 'clickDetected':
-      // "Click All Now" from the debug panel.
       if (settings.debugMode && currentSiteId) {
         forceClick();
         sendResponse({ ok: true });
       }
       break;
 
-    case 'getDetectedButtons':
-      if (!currentSiteId) {
-        sendResponse({ siteId: null, detected: [] });
-      } else {
-        sendResponse({
-          siteId,
-          siteName: currentSite?.name || currentSiteId,
-          isIframe: !IS_TOP_FRAME,
-          detected: allButtons().map(btn => ({
-            label:    btn.label,
-            selector: btn.selector,
-            found:    !!safeQuery(btn.selector),
-            custom:   !!btn.custom,
-          })),
+    case 'getDetectedButtons': {
+      const siteToggleMap = buttonToggles[currentSiteId] || {};
+
+      // Own frame detections
+      const ownDetected = allButtons().map(btn => ({
+        label:    btn.label,
+        selector: btn.selector,
+        found:    !!safeQuery(btn.selector),
+        custom:   !!btn.custom,
+        enabled:  siteToggleMap[btn.label] !== false,
+        lastSeen: healthCache[`${currentSiteId}__${btn.label}`] || null,
+        frameUrl: window.location.href,
+        isIframe: !IS_TOP_FRAME,
+      }));
+
+      // Merge cross-frame detections collected via postMessage (top frame only)
+      const crossFrameDetected = [];
+      if (IS_TOP_FRAME) {
+        frameDetections.forEach(({ siteId, detected }, frameUrl) => {
+          if (siteId === currentSiteId) {
+            detected.forEach(btn => crossFrameDetected.push({ ...btn, frameUrl, isIframe: true }));
+          }
         });
       }
+
+      sendResponse({
+        siteId:   currentSiteId,
+        siteName: currentSite?.name || currentSiteId,
+        detected: [...ownDetected, ...crossFrameDetected],
+      });
       break;
+    }
+
+    case 'testSelector': {
+      try {
+        const all  = document.querySelectorAll(msg.selector);
+        const inShadow = currentSite?.searchShadowDom ? !!safeQuery(msg.selector) : false;
+        sendResponse({ count: all.length, shadowHit: inShadow });
+      } catch (e) {
+        sendResponse({ count: 0, error: e.message });
+      }
+      break;
+    }
   }
-  // Do NOT return true globally — only async handlers need it.
 });
 
 // ─── Init ─────────────────────────────────────────────────────────────────────
 
 async function init() {
   try {
-    // Fetch the sites config bundled with the extension.
-    const resp = await fetch(browser.runtime.getURL('sites.json'));
-    sitesConfig = await resp.json();
+    // 1. Get sites config — prefer background's cached copy, fall back to
+    //    direct fetch of the bundled file.
+    try {
+      const resp = await browser.runtime.sendMessage({ action: 'getSitesConfig' });
+      sitesConfig = resp?.config ?? null;
+    } catch (_) {}
 
-    // Load persisted settings.
+    if (!sitesConfig) {
+      const r = await fetch(browser.runtime.getURL('sites.json'));
+      sitesConfig = await r.json();
+    }
+
+    // 2. Load persisted settings.
     const stored = await browser.storage.local.get([
-      'extensionEnabled', 'sites', 'debugMode', 'customButtons', 'pickerMode',
+      'extensionEnabled', 'sites', 'debugMode',
+      'customButtons', 'buttonToggles', 'pickerMode', 'healthData',
     ]);
 
     settings.extensionEnabled = stored.extensionEnabled !== false;
     settings.debugMode        = stored.debugMode  === true;
     settings.pickerMode       = stored.pickerMode === true;
-    customButtons             = stored.customButtons || {};
+    customButtons             = stored.customButtons  || {};
+    buttonToggles             = stored.buttonToggles  || {};
+    healthCache               = stored.healthData     || {};
 
-    if (!settings.extensionEnabled) {
-      log('Extension disabled');
-      return;
-    }
+    if (!settings.extensionEnabled) { log('Extension disabled'); return; }
 
+    // 3. Detect site.
     const match = detectSite();
     if (!match) {
       log(`No site match for: ${window.location.hostname}` +
-          (IS_TOP_FRAME ? '' : ` (iframe, top: ${getTopHostname()})`));
+          (!IS_TOP_FRAME ? ` (iframe, top: ${getTopHostname()})` : ''));
       return;
     }
 
-    const [siteId, site] = match;
-    const enabledSites   = stored.sites || {};
-    if (enabledSites[siteId] === false) {
-      log(`Site ${siteId} is disabled by user`);
-      return;
-    }
+    const [siteId, site]   = match;
+    const enabledSites     = stored.sites || {};
+    if (enabledSites[siteId] === false) { log(`${siteId} disabled by user`); return; }
 
     currentSiteId = siteId;
     currentSite   = site;

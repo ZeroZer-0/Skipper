@@ -9,304 +9,315 @@
 
     body {
       font-family: system-ui, -apple-system, sans-serif;
-      width: 310px;
+      width: 320px;
+      max-height: 600px;
+      overflow-y: auto;
       background: #111;
       color: #ddd;
       font-size: 13px;
+      scrollbar-width: thin;
+      scrollbar-color: #333 #111;
     }
+    body::-webkit-scrollbar { width: 5px; }
+    body::-webkit-scrollbar-track { background: #111; }
+    body::-webkit-scrollbar-thumb { background: #333; border-radius: 3px; }
 
     /* ── Header ── */
     .header {
       background: #1a1a1a;
-      padding: 12px 14px 10px;
+      padding: 10px 14px;
       border-bottom: 1px solid #222;
       display: flex;
       align-items: center;
       justify-content: space-between;
+      position: sticky;
+      top: 0;
+      z-index: 10;
     }
-    .header h1 { font-size: 16px; font-weight: 700; color: #fff; letter-spacing: 0.5px; }
-    .version { font-size: 10px; color: #555; }
+    .header h1 { font-size: 15px; font-weight: 700; color: #fff; }
+    .header-right { display: flex; align-items: center; gap: 8px; }
+    .version { font-size: 10px; color: #444; }
+    .icon-btn {
+      background: none; border: 1px solid #333; border-radius: 4px;
+      color: #777; font-size: 11px; padding: 3px 7px; cursor: pointer;
+      transition: color .15s, border-color .15s;
+    }
+    .icon-btn:hover { color: #ccc; border-color: #555; }
+    .icon-btn.spinning { animation: spin .8s linear infinite; }
+    @keyframes spin { to { transform: rotate(360deg); } }
 
     /* ── Sections ── */
-    .section { padding: 10px 14px; border-bottom: 1px solid #1e1e1e; }
+    .section { border-bottom: 1px solid #1c1c1c; }
+    .section-inner { padding: 10px 14px; }
     .section-title {
-      font-size: 10px;
-      font-weight: 600;
-      text-transform: uppercase;
-      letter-spacing: 1px;
-      color: #555;
-      margin-bottom: 8px;
+      font-size: 10px; font-weight: 600; text-transform: uppercase;
+      letter-spacing: 1px; color: #444; margin-bottom: 8px;
     }
 
-    /* ── Toggle rows ── */
+    /* ── Toggle switch ── */
     .toggle-row {
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-      padding: 5px 0;
+      display: flex; align-items: center;
+      justify-content: space-between; padding: 5px 0;
     }
+    .toggle-text { flex: 1; }
     .toggle-label { color: #ccc; }
-    .toggle-sub { font-size: 11px; color: #666; margin-top: 1px; }
-
-    /* Toggle switch */
+    .toggle-sub { font-size: 11px; color: #555; margin-top: 1px; }
     .switch { position: relative; width: 36px; height: 20px; flex-shrink: 0; }
     .switch input { opacity: 0; width: 0; height: 0; }
     .slider {
       position: absolute; inset: 0;
-      background: #333; border-radius: 20px; cursor: pointer;
-      transition: background 0.2s;
+      background: #2a2a2a; border-radius: 20px; cursor: pointer;
+      transition: background .2s;
     }
     .slider::before {
-      content: '';
-      position: absolute;
-      width: 14px; height: 14px;
-      left: 3px; top: 3px;
-      background: #888; border-radius: 50%;
-      transition: transform 0.2s, background 0.2s;
+      content: ''; position: absolute;
+      width: 14px; height: 14px; left: 3px; top: 3px;
+      background: #666; border-radius: 50%;
+      transition: transform .2s, background .2s;
     }
-    input:checked + .slider { background: #1e4d1e; }
-    input:checked + .slider::before { transform: translateX(16px); background: #4caf50; }
-    .debug-switch input:checked + .slider { background: #3d2a00; }
+    input:checked + .slider                    { background: #1b3d1b; }
+    input:checked + .slider::before            { transform: translateX(16px); background: #4caf50; }
+    .debug-switch input:checked + .slider      { background: #2e2000; }
     .debug-switch input:checked + .slider::before { background: #ff9800; }
 
-    /* ── Site list ── */
-    .site-row {
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-      padding: 5px 6px;
-      border-radius: 4px;
-      margin-bottom: 2px;
-      transition: background 0.1s;
+    /* ── Sites list ── */
+    .site-block { border-radius: 5px; margin-bottom: 4px; overflow: hidden; }
+    .site-header {
+      display: flex; align-items: center; gap: 8px;
+      padding: 6px 8px; cursor: pointer;
+      border-radius: 5px; transition: background .12s;
+      user-select: none;
     }
-    .site-row:hover { background: #191919; }
-    .site-name { font-weight: 500; color: #ccc; }
-    .site-domains { font-size: 10px; color: #555; margin-top: 1px; }
+    .site-header:hover { background: #1a1a1a; }
+    .site-expand {
+      font-size: 10px; color: #444; transition: transform .2s; flex-shrink: 0;
+    }
+    .site-block.open .site-expand { transform: rotate(90deg); }
+    .site-info { flex: 1; overflow: hidden; }
+    .site-name   { font-weight: 500; color: #bbb; font-size: 13px; }
+    .site-domain { font-size: 10px; color: #444; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+
+    /* Per-button list (inside collapsible) */
+    .btn-list {
+      display: none; padding: 2px 8px 8px 26px;
+    }
+    .site-block.open .btn-list { display: block; }
+    .btn-toggle-row {
+      display: flex; align-items: center; justify-content: space-between;
+      padding: 3px 0;
+    }
+    .btn-toggle-label { font-size: 12px; color: #999; }
+
+    /* ── Buttons (UI) ── */
+    button {
+      background: #1c1c1c; color: #bbb;
+      border: 1px solid #2e2e2e; border-radius: 5px;
+      padding: 5px 10px; cursor: pointer; font-size: 12px;
+      transition: background .15s, border-color .15s;
+    }
+    button:hover { background: #252525; border-color: #3a3a3a; }
+    button:active { transform: scale(.97); }
+    .btn-row { display: flex; gap: 6px; flex-wrap: wrap; }
+    .btn-green  { color: #4caf50; border-color: #1b3d1b; }
+    .btn-green:hover  { background: #162e16; border-color: #4caf50; }
+    .btn-orange { color: #ff9800; border-color: #2e2000; }
+    .btn-orange:hover { background: #1e1600; border-color: #ff9800; }
+    .btn-red    { color: #f44336; border-color: #3d1010; }
+    .btn-red:hover    { background: #2a0e0e; border-color: #f44336; }
+    .btn-blue   { color: #64b5f6; border-color: #0d2a3d; }
+    .btn-blue:hover   { background: #0a1e2e; border-color: #64b5f6; }
+    .full-btn { width: 100%; }
 
     /* ── Debug panel ── */
     #debugPanel { display: none; }
-    .debug-header {
-      display: flex;
-      align-items: center;
-      gap: 6px;
-      font-size: 11px;
-      font-weight: 600;
-      text-transform: uppercase;
-      letter-spacing: 1px;
-      color: #ff9800;
-      margin-bottom: 8px;
+    .debug-badge {
+      display: inline-flex; align-items: center; gap: 6px;
+      font-size: 10px; font-weight: 600; text-transform: uppercase;
+      letter-spacing: 1px; color: #ff9800; margin-bottom: 8px;
     }
     .debug-dot {
-      width: 7px; height: 7px;
-      border-radius: 50%;
-      background: #ff9800;
-      animation: pulse 1.5s infinite;
+      width: 7px; height: 7px; border-radius: 50%; background: #ff9800;
+      animation: pulse 1.6s infinite;
     }
-    @keyframes pulse {
-      0%, 100% { opacity: 1; }
-      50%       { opacity: 0.3; }
-    }
+    @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:.3} }
 
-    .site-info-line { font-size: 12px; color: #888; margin-bottom: 8px; }
-    .site-info-line strong { color: #ddd; }
+    .detected-row {
+      display: flex; align-items: center; gap: 7px;
+      padding: 3px 0; font-size: 12px;
+    }
+    .ind { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; }
+    .ind-found    { background: #4caf50; }
+    .ind-disabled { background: #333; border: 1px solid #444; }
+    .ind-missing  { background: #333; border: 1px dashed #555; }
+    .ind-custom   { background: #64b5f6; }
+    .ind-iframe   { background: #ab47bc; }
+    .det-label { flex: 1; }
+    .det-label.dim { color: #555; }
+    .det-health { font-size: 10px; color: #555; flex-shrink: 0; }
 
-    /* Button status list */
-    .btn-list { margin-bottom: 8px; }
-    .btn-row {
-      display: flex;
-      align-items: center;
-      gap: 7px;
-      padding: 3px 0;
-      font-size: 12px;
-      color: #aaa;
+    /* Picker */
+    .picker-bar {
+      display: none; background: #1e1600;
+      border: 1px dashed #ff9800; border-radius: 5px;
+      padding: 7px 10px; font-size: 12px; color: #ff9800;
+      margin-top: 8px; line-height: 1.6;
     }
-    .indicator {
-      width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0;
-    }
-    .ind-found     { background: #4caf50; }
-    .ind-not-found { background: #333; border: 1px solid #444; }
-    .ind-custom    { background: #2196f3; }
-    .found-label   { color: #ddd; }
-
-    /* Action buttons */
-    .actions { display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 8px; }
-    button {
-      background: #1e1e1e;
-      color: #ccc;
-      border: 1px solid #333;
-      border-radius: 5px;
-      padding: 6px 10px;
-      cursor: pointer;
-      font-size: 12px;
-      flex: 1;
-      min-width: 80px;
-      transition: background 0.15s, border-color 0.15s;
-    }
-    button:hover { background: #252525; border-color: #444; }
-    button:active { transform: scale(0.97); }
-    button.btn-green  { color: #4caf50; border-color: #1e4d1e; }
-    button.btn-green:hover  { background: #1a3a1a; border-color: #4caf50; }
-    button.btn-orange { color: #ff9800; border-color: #3d2a00; }
-    button.btn-orange:hover { background: #2a1e00; border-color: #ff9800; }
-    button.btn-red    { color: #f44336; border-color: #3d1010; }
-    button.btn-red:hover    { background: #2a0e0e; border-color: #f44336; }
-
-    /* Picker status bar */
-    .picker-active-bar {
-      display: none;
-      background: #2a1e00;
-      border: 1px dashed #ff9800;
-      border-radius: 5px;
-      padding: 7px 10px;
-      font-size: 12px;
-      color: #ff9800;
-      margin-bottom: 8px;
-      line-height: 1.6;
-    }
-    .picker-active-bar.visible { display: block; }
+    .picker-bar.visible { display: block; }
 
     /* Picked-element save panel */
     .picked-panel {
-      display: none;
-      background: #0d200d;
-      border: 1px solid #2e5e2e;
-      border-radius: 5px;
-      padding: 8px 10px;
-      margin-bottom: 8px;
+      display: none; background: #0c1e0c;
+      border: 1px solid #2a522a; border-radius: 5px;
+      padding: 8px 10px; margin-top: 8px;
     }
     .picked-panel.visible { display: block; }
-    .picked-title { font-size: 11px; font-weight: 600; color: #4caf50; margin-bottom: 6px; }
-    .picked-selector {
-      font-family: monospace; font-size: 10px; color: #888;
-      word-break: break-all; margin-bottom: 6px;
-      padding: 4px 6px; background: #0a180a; border-radius: 3px;
+    .picked-title { font-size: 11px; font-weight: 600; color: #4caf50; margin-bottom: 5px; }
+    .picked-sel {
+      font-family: monospace; font-size: 10px; color: #777;
+      word-break: break-all; padding: 4px 6px; background: #080e08;
+      border-radius: 3px; margin-bottom: 6px;
     }
     .picked-panel input[type="text"] {
-      width: 100%;
-      background: #111; color: #ddd;
-      border: 1px solid #333; border-radius: 4px;
-      padding: 5px 8px; font-size: 12px;
-      margin-bottom: 6px;
+      width: 100%; background: #111; color: #ddd;
+      border: 1px solid #2e2e2e; border-radius: 4px;
+      padding: 5px 8px; font-size: 12px; margin-bottom: 6px;
     }
-    .picked-panel input[type="text"]::placeholder { color: #444; }
-    .picked-panel input[type="text"]:focus {
-      outline: none; border-color: #4caf50;
-    }
-    .picked-actions { display: flex; gap: 6px; }
-    .picked-actions button { flex: 1; }
+    .picked-panel input[type="text"]::placeholder { color: #3a3a3a; }
+    .picked-panel input[type="text"]:focus { outline: none; border-color: #4caf50; }
 
-    /* Custom buttons list */
-    .custom-list-title { font-size: 11px; color: #555; margin: 8px 0 4px; }
-    .custom-btn-row {
-      display: flex;
-      align-items: center;
-      gap: 6px;
-      padding: 4px 6px;
-      border-radius: 4px;
-      font-size: 12px;
+    /* Selector test box */
+    .test-box { margin-top: 10px; }
+    .test-box input[type="text"] {
+      width: 100%; background: #111; color: #ddd;
+      border: 1px solid #2e2e2e; border-radius: 4px;
+      padding: 5px 8px; font-size: 12px;
     }
-    .custom-btn-row:hover { background: #191919; }
-    .custom-btn-info { flex: 1; overflow: hidden; }
-    .custom-btn-label  { color: #ccc; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-    .custom-btn-sel    { font-family: monospace; font-size: 10px; color: #555; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-    .custom-btn-site   { font-size: 10px; color: #444; }
+    .test-box input[type="text"]::placeholder { color: #3a3a3a; }
+    .test-box input[type="text"]:focus { outline: none; border-color: #64b5f6; }
+    .test-result { font-size: 11px; margin-top: 4px; color: #555; min-height: 16px; }
+
+    /* Custom buttons */
+    .custom-section { margin-top: 10px; }
+    .custom-row {
+      display: flex; align-items: center; gap: 6px;
+      padding: 4px 6px; border-radius: 4px; font-size: 12px;
+    }
+    .custom-row:hover { background: #181818; }
+    .custom-info { flex: 1; overflow: hidden; }
+    .custom-name { color: #bbb; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .custom-sel  { font-family: monospace; font-size: 10px; color: #444; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .custom-site { font-size: 10px; color: #3a3a3a; }
     .del-btn {
-      flex: none;
-      background: none; border: none;
-      color: #4a1515; font-size: 14px;
-      cursor: pointer; padding: 2px 5px;
-      border-radius: 3px;
-      transition: color 0.15s;
+      flex: none; background: none; border: none;
+      color: #3a1010; font-size: 14px; cursor: pointer;
+      padding: 2px 4px; border-radius: 3px; transition: color .15s;
     }
-    .del-btn:hover { color: #f44336; background: none; }
+    .del-btn:hover { color: #f44336; }
+
+    /* Import hidden input */
+    #importFileInput { display: none; }
 
     /* Status bar */
     #statusBar {
-      padding: 7px 14px;
-      font-size: 11px;
-      color: #555;
-      min-height: 28px;
-      line-height: 1.4;
+      padding: 6px 14px;
+      font-size: 11px; color: #444; min-height: 26px; line-height: 1.4;
     }
     #statusBar.ok  { color: #4caf50; }
     #statusBar.err { color: #f44336; }
+
+    .mt6 { margin-top: 6px; }
+    .mt8 { margin-top: 8px; }
+    .gap4 { gap: 4px; }
   </style>
 </head>
 <body>
 
+  <!-- Header -->
   <div class="header">
     <h1>Skipper</h1>
-    <span class="version">v3.0</span>
+    <div class="header-right">
+      <button class="icon-btn" id="refreshConfigBtn" title="Re-fetch remote sites.json">&#8635;</button>
+      <span class="version">v4.0</span>
+    </div>
   </div>
 
   <!-- Global toggles -->
   <div class="section">
-    <div class="toggle-row">
-      <div>
-        <div class="toggle-label">Enable Extension</div>
+    <div class="section-inner">
+      <div class="toggle-row">
+        <div class="toggle-text"><div class="toggle-label">Enable Extension</div></div>
+        <label class="switch"><input type="checkbox" id="globalToggle" /><span class="slider"></span></label>
       </div>
-      <label class="switch">
-        <input type="checkbox" id="globalToggle" />
-        <span class="slider"></span>
-      </label>
-    </div>
-    <div class="toggle-row">
-      <div>
-        <div class="toggle-label">Debug Mode</div>
-        <div class="toggle-sub">Highlight buttons in green — don't click them</div>
+      <div class="toggle-row">
+        <div class="toggle-text">
+          <div class="toggle-label">Debug Mode</div>
+          <div class="toggle-sub">Highlight buttons — don't click them</div>
+        </div>
+        <label class="switch debug-switch"><input type="checkbox" id="debugToggle" /><span class="slider"></span></label>
       </div>
-      <label class="switch debug-switch">
-        <input type="checkbox" id="debugToggle" />
-        <span class="slider"></span>
-      </label>
     </div>
   </div>
 
-  <!-- Per-site toggles -->
+  <!-- Per-site / per-button toggles -->
   <div class="section" id="siteOptions" style="display:none">
-    <div class="section-title">Sites</div>
-    <!-- populated by popup.js -->
+    <div class="section-inner">
+      <div class="section-title">Sites &amp; Buttons</div>
+      <div id="siteList"><!-- populated by popup.js --></div>
+    </div>
   </div>
 
   <!-- Debug panel -->
   <div class="section" id="debugPanel">
-    <div class="debug-header">
-      <span class="debug-dot"></span>
-      Debug Panel
-    </div>
+    <div class="section-inner">
+      <div class="debug-badge"><span class="debug-dot"></span> Debug Panel</div>
 
-    <div class="site-info-line" id="debugSiteInfo">Loading…</div>
-    <div class="btn-list" id="detectedButtonsList"></div>
+      <div id="debugSiteInfo" style="font-size:12px;color:#666;margin-bottom:8px">Loading…</div>
+      <div id="detectedButtonsList"></div>
 
-    <div class="actions">
-      <button class="btn-green"  id="clickAllBtn"    style="display:none">Click All Now</button>
-      <button class="btn-orange" id="pickElementBtn">Pick Element</button>
-    </div>
-
-    <!-- Picker-active notice -->
-    <div class="picker-active-bar" id="pickerActiveBar">
-      Picker active — click any element on the page.<br>
-      <small style="color:#aa7700">Press Escape to cancel.</small>
-      <div style="margin-top:6px">
-        <button class="btn-red" id="cancelPickerBtn" style="flex:none;min-width:0;padding:4px 10px">Cancel</button>
+      <div class="btn-row mt6">
+        <button class="btn-green" id="clickAllBtn"    style="display:none;flex:1">Click All Now</button>
+        <button class="btn-orange" id="pickElementBtn" style="flex:1">Pick Element</button>
       </div>
-    </div>
 
-    <!-- Element-save panel (appears after picking) -->
-    <div class="picked-panel" id="pickedPanel">
-      <div class="picked-title">Element captured — give it a label to save it</div>
-      <div class="picked-selector" id="pickedSelector"></div>
-      <input type="text" id="pickedLabel" placeholder="Label, e.g. Skip Intro" />
-      <div class="picked-actions">
-        <button class="btn-green" id="savePickedBtn">Save</button>
-        <button id="discardPickedBtn">Discard</button>
+      <!-- Picker-active notice -->
+      <div class="picker-bar" id="pickerBar">
+        Picker active — click any element on the page.<br>
+        <small style="color:#7a5500">Press Escape to cancel.</small>
+        <div class="mt6">
+          <button class="btn-red" id="cancelPickerBtn">Cancel Picker</button>
+        </div>
       </div>
-    </div>
 
-    <!-- User-added custom buttons -->
-    <div id="customButtonsSection" style="display:none">
-      <div class="custom-list-title">Custom buttons</div>
-      <div id="customButtonsList"></div>
+      <!-- Save-picked-element panel -->
+      <div class="picked-panel" id="pickedPanel">
+        <div class="picked-title">Element captured — give it a label to save</div>
+        <div class="picked-sel" id="pickedSel"></div>
+        <input type="text" id="pickedLabel" placeholder="e.g. Skip Intro" />
+        <div class="btn-row gap4">
+          <button class="btn-green" id="savePickedBtn" style="flex:1">Save</button>
+          <button id="discardPickedBtn" style="flex:1">Discard</button>
+        </div>
+      </div>
+
+      <!-- Selector test box -->
+      <div class="test-box mt8">
+        <div class="section-title" style="margin-bottom:4px">Test a selector</div>
+        <input type="text" id="selectorTestInput" placeholder="e.g. button[data-testid=&quot;skip&quot;]" />
+        <div class="test-result" id="selectorTestResult"></div>
+      </div>
+
+      <!-- Custom buttons list -->
+      <div class="custom-section" id="customButtonsSection" style="display:none">
+        <div class="section-title" style="margin-top:4px">Custom Buttons</div>
+        <div id="customButtonsList"></div>
+      </div>
+
+      <!-- Export / Import -->
+      <div class="btn-row mt8">
+        <button class="btn-blue" id="exportBtn" style="flex:1">Export JSON</button>
+        <button class="btn-blue" id="importBtn" style="flex:1">Import JSON</button>
+      </div>
+      <input type="file" id="importFileInput" accept=".json,application/json" />
     </div>
   </div>
 
