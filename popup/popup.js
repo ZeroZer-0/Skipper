@@ -103,13 +103,24 @@ function buildSiteList(enabledSites) {
     // Header row (click to expand/collapse)
     const header = document.createElement('div');
     header.className = 'site-header';
-    header.innerHTML = `
-      <span class="site-expand">&#9654;</span>
-      <div class="site-info">
-        <div class="site-name">${site.name}</div>
-        <div class="site-domain">${site.domains.join(', ')}</div>
-      </div>
+
+    // Favicon — fetched from DuckDuckGo's icon service (no extra permissions needed).
+    const favicon = document.createElement('img');
+    favicon.className = 'site-favicon';
+    favicon.width  = 16;
+    favicon.height = 16;
+    favicon.src    = `https://icons.duckduckgo.com/ip3/${site.domains[0]}.ico`;
+    favicon.onerror = () => { favicon.style.display = 'none'; }; // hide if unavailable
+
+    header.innerHTML = `<span class="site-expand">&#9654;</span>`;
+    header.appendChild(favicon);
+    const siteInfo = document.createElement('div');
+    siteInfo.className = 'site-info';
+    siteInfo.innerHTML = `
+      <div class="site-name">${site.name}</div>
+      <div class="site-domain">${site.domains.join(', ')}</div>
     `;
+    header.appendChild(siteInfo);
 
     // Site-level toggle switch
     const siteSwitch = document.createElement('label');
