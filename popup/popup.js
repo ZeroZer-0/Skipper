@@ -39,6 +39,10 @@ const clickAllBtn          = document.getElementById('clickAllBtn');
 const selectorTestInput    = document.getElementById('selectorTestInput');
 const selectorTestResult   = document.getElementById('selectorTestResult');
 const statusBar            = document.getElementById('statusBar');
+const candidateSection     = document.getElementById('candidateSection');
+const candidateBadge       = document.getElementById('candidateBadge');
+const candidateList        = document.getElementById('candidateList');
+const scanCandidatesBtn    = document.getElementById('scanCandidatesBtn');
 
 // ─── Status bar ───────────────────────────────────────────────────────────────
 
@@ -196,6 +200,7 @@ async function loadSettings() {
   if (lastPicked && !pickerMode) showPickedPanel(lastPicked);
 
   renderLocalButtons();
+  if (extensionEnabled) refreshCandidates();
   if (debugMode) await refreshDebugPanel();
 }
 
@@ -220,6 +225,7 @@ function applyVisibility(extensionEnabled, debugMode) {
   siteOptions.style.display  = extensionEnabled ? 'block' : 'none';
   localSection.style.display = extensionEnabled ? 'block' : 'none';
   debugPanel.style.display   = (extensionEnabled && debugMode) ? 'block' : 'none';
+  if (!extensionEnabled) candidateSection.style.display = 'none';
 }
 
 async function broadcast(s) {
@@ -285,6 +291,82 @@ function renderLocalButtons() {
     row.append(fav, info, del);
     localButtonsList.appendChild(row);
   });
+}
+
+// ─── Candidate detection ──────────────────────────────────────────────────────
+
+function updateCandidateBadge(count) {
+  if (count > 0) {
+    candidateBadge.textContent   = count;
+    candidateBadge.style.display = 'inline-block';
+  } else {
+    candidateBadge.style.display = 'none';
+  }
+}
+
+function renderCandidates(candidates) {
+  candidateList.innerHTML = '';
+  if (!candidates || candidates.length === 0) {
+    candidateSection.style.display = 'none';
+    return;
+  }
+  candidateSection.style.display = 'block';
+
+  candidates.forEach(c => {
+    const row = document.createElement('div');
+    row.className = 'candidate-row';
+
+    const scoreEl = document.createElement('span');
+    scoreEl.className   = c.scoreLabel === 'High' ? 'score-high' : 'score-med';
+    scoreEl.textContent = c.scoreLabel;
+
+    const info = document.createElement('div');
+    info.className = 'candidate-info';
+    info.innerHTML = `<div class="candidate-name">${c.label}</div>
+                      <div class="candidate-sel">${c.selector}</div>`;
+
+    const addBtn = document.createElement('button');
+    addBtn.className   = 'add-candidate-btn';
+    addBtn.textContent = 'Add';
+    addBtn.addEventListener('click', () => promoteCandidateToLocalButton(c));
+
+    row.append(scoreEl, info, addBtn);
+    candidateList.appendChild(row);
+  });
+
+  updateCandidateBadge(candidates.length);
+}
+
+async function refreshCandidates() {
+  try {
+    const candidates = await browser.tabs.sendMessage(currentTabId, { action: 'getCandidates' });
+    renderCandidates(candidates);
+  } catch (_) {
+    candidateSection.style.display = 'none';
+  }
+}
+
+async function promoteCandidateToLocalButton(candidate) {
+  let siteId = null;
+  try {
+    const resp = await browser.tabs.sendMessage(currentTabId, { action: 'getDetectedButtons' });
+    siteId = resp?.siteId || null;
+  } catch (_) {}
+  if (!siteId) { setStatus('Could not determine current site.', 'err'); return; }
+
+  if (!customButtons[siteId]) customButtons[siteId] = [];
+  customButtons[siteId].push({ label: candidate.label, selector: candidate.selector, custom: true });
+  setButtonToggle(siteId, candidate.label, true);
+
+  await browser.storage.local.set({ customButtons, buttonToggles });
+  await broadcast({ customButtons, buttonToggles });
+
+  renderLocalButtons();
+  const s = await browser.storage.local.get('sites');
+  buildSiteList(s.sites || {});
+  if (debugToggle.checked) await refreshDebugPanel();
+  await refreshCandidates();
+  setStatus(`Added: ${candidate.label}`, 'ok');
 }
 
 // ─── Picker ───────────────────────────────────────────────────────────────────
@@ -531,6 +613,8 @@ selectorTestInput.addEventListener('input', () => {
   }, 300);
 });
 
+scanCandidatesBtn.addEventListener('click', refreshCandidates);
+
 // Real-time messages from content script (picker result while popup is open)
 browser.runtime.onMessage.addListener(msg => {
   if (msg.action === 'elementPicked') {
@@ -540,6 +624,9 @@ browser.runtime.onMessage.addListener(msg => {
   } else if (msg.action === 'pickerCancelled') {
     pickerBar.classList.remove('visible');
     setStatus('Picker cancelled.');
+  } else if (msg.action === 'candidatesUpdated') {
+    updateCandidateBadge(msg.count);
+    if (msg.count > 0) refreshCandidates();
   }
 });
 
