@@ -520,6 +520,10 @@ function runCandidateScan() {
     candidateCache.clear();
     results.forEach(c => candidateCache.set(c.selector, c));
     candidateBadgeCount = results.length;
+    if (candidateBadgeCount > 0) {
+      browser.runtime.sendMessage({ action: 'candidatesFound', count: candidateBadgeCount }).catch(() => {});
+    }
+    // Also notify popup if it's open
     browser.runtime.sendMessage({ action: 'candidatesUpdated', count: candidateBadgeCount }).catch(() => {});
   }, 2_000);
 }
@@ -624,7 +628,7 @@ browser.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
     }
 
     case 'getCandidates':
-      sendResponse(scanForCandidates());
+      sendResponse({ siteId: currentSiteId, candidates: scanForCandidates() });
       break;
 
     case 'enableCandidateWatch':

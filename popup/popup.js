@@ -6,11 +6,12 @@ if (typeof browser === 'undefined') {
 
 // ─── State ────────────────────────────────────────────────────────────────────
 
-let sitesConfig   = null;
-let customButtons = {};     // { siteId: [{label, selector, custom}] }
-let buttonToggles = {};     // { siteId: { label: boolean } }
-let healthData    = {};     // { "siteId__label": timestamp }
-let currentTabId  = null;
+let sitesConfig      = null;
+let customButtons    = {};     // { siteId: [{label, selector, custom}] }
+let buttonToggles    = {};     // { siteId: { label: boolean } }
+let healthData       = {};     // { "siteId__label": timestamp }
+let currentTabId     = null;
+let _candidateSiteId = null;  // siteId returned from last getCandidates response
 
 // ─── Element refs ─────────────────────────────────────────────────────────────
 
@@ -339,19 +340,18 @@ function renderCandidates(candidates) {
 
 async function refreshCandidates() {
   try {
-    const candidates = await browser.tabs.sendMessage(currentTabId, { action: 'getCandidates' });
-    renderCandidates(candidates);
+    const resp = await browser.tabs.sendMessage(currentTabId, { action: 'getCandidates' });
+    renderCandidates(resp?.candidates || []);
+    if (resp?.siteId) _candidateSiteId = resp.siteId;
+    // Clear the action badge now that user has the popup open
+    browser.runtime.sendMessage({ action: 'clearCandidateBadge' }).catch(() => {});
   } catch (_) {
     candidateSection.style.display = 'none';
   }
 }
 
 async function promoteCandidateToLocalButton(candidate) {
-  let siteId = null;
-  try {
-    const resp = await browser.tabs.sendMessage(currentTabId, { action: 'getDetectedButtons' });
-    siteId = resp?.siteId || null;
-  } catch (_) {}
+  const siteId = _candidateSiteId;
   if (!siteId) { setStatus('Could not determine current site.', 'err'); return; }
 
   if (!customButtons[siteId]) customButtons[siteId] = [];
