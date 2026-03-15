@@ -43,7 +43,7 @@
       transition: color .15s, border-color .15s;
     }
     .icon-btn:hover { color: #ccc; border-color: #555; }
-    .icon-btn.spinning { animation: spin .8s linear infinite; }
+    .icon-btn.spinning { animation: spin .8s linear infinite; display: inline-block; }
     @keyframes spin { to { transform: rotate(360deg); } }
 
     /* ── Sections ── */
@@ -75,9 +75,9 @@
       background: #666; border-radius: 50%;
       transition: transform .2s, background .2s;
     }
-    input:checked + .slider                    { background: #1b3d1b; }
-    input:checked + .slider::before            { transform: translateX(16px); background: #4caf50; }
-    .debug-switch input:checked + .slider      { background: #2e2000; }
+    input:checked + .slider                       { background: #1b3d1b; }
+    input:checked + .slider::before               { transform: translateX(16px); background: #4caf50; }
+    .debug-switch input:checked + .slider         { background: #2e2000; }
     .debug-switch input:checked + .slider::before { background: #ff9800; }
 
     /* ── Sites list ── */
@@ -89,27 +89,28 @@
       user-select: none;
     }
     .site-header:hover { background: #1a1a1a; }
-    .site-expand {
-      font-size: 10px; color: #444; transition: transform .2s; flex-shrink: 0;
-    }
+    .site-expand { font-size: 10px; color: #444; transition: transform .2s; flex-shrink: 0; }
     .site-block.open .site-expand { transform: rotate(90deg); }
     .site-info { flex: 1; overflow: hidden; }
-    .site-favicon { width: 16px; height: 16px; border-radius: 3px; flex-shrink: 0; image-rendering: auto; }
+    .site-favicon { width: 16px; height: 16px; border-radius: 3px; flex-shrink: 0; }
     .site-name   { font-weight: 500; color: #bbb; font-size: 13px; }
     .site-domain { font-size: 10px; color: #444; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 
-    /* Per-button list (inside collapsible) */
-    .btn-list {
-      display: none; padding: 2px 8px 8px 26px;
-    }
+    /* Per-button list (collapsible) */
+    .btn-list { display: none; padding: 2px 8px 6px 26px; }
     .site-block.open .btn-list { display: block; }
     .btn-toggle-row {
-      display: flex; align-items: center; justify-content: space-between;
-      padding: 3px 0;
+      display: flex; align-items: center; justify-content: space-between; padding: 3px 0;
     }
-    .btn-toggle-label { font-size: 12px; color: #999; }
+    .btn-toggle-label { font-size: 12px; color: #888; flex: 1; }
+    .btn-toggle-label.custom-tag::after {
+      content: 'local'; font-size: 9px; color: #444;
+      background: #1e1e1e; border: 1px solid #333;
+      border-radius: 3px; padding: 0 4px; margin-left: 6px;
+      vertical-align: middle;
+    }
 
-    /* ── Buttons (UI) ── */
+    /* ── UI Buttons ── */
     button {
       background: #1c1c1c; color: #bbb;
       border: 1px solid #2e2e2e; border-radius: 5px;
@@ -127,36 +128,17 @@
     .btn-red:hover    { background: #2a0e0e; border-color: #f44336; }
     .btn-blue   { color: #64b5f6; border-color: #0d2a3d; }
     .btn-blue:hover   { background: #0a1e2e; border-color: #64b5f6; }
-    .full-btn { width: 100%; }
 
-    /* ── Debug panel ── */
-    #debugPanel { display: none; }
-    .debug-badge {
-      display: inline-flex; align-items: center; gap: 6px;
-      font-size: 10px; font-weight: 600; text-transform: uppercase;
-      letter-spacing: 1px; color: #ff9800; margin-bottom: 8px;
-    }
-    .debug-dot {
-      width: 7px; height: 7px; border-radius: 50%; background: #ff9800;
-      animation: pulse 1.6s infinite;
-    }
-    @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:.3} }
+    /* ── Local Buttons section ── */
+    #localSection { display: none; }
 
-    .detected-row {
-      display: flex; align-items: center; gap: 7px;
-      padding: 3px 0; font-size: 12px;
+    .pick-btn-full {
+      width: 100%; text-align: center; padding: 7px;
+      color: #ff9800; border-color: #2e2000;
     }
-    .ind { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; }
-    .ind-found    { background: #4caf50; }
-    .ind-disabled { background: #333; border: 1px solid #444; }
-    .ind-missing  { background: #333; border: 1px dashed #555; }
-    .ind-custom   { background: #64b5f6; }
-    .ind-iframe   { background: #ab47bc; }
-    .det-label { flex: 1; }
-    .det-label.dim { color: #555; }
-    .det-health { font-size: 10px; color: #555; flex-shrink: 0; }
+    .pick-btn-full:hover { background: #1e1600; border-color: #ff9800; }
 
-    /* Picker */
+    /* Picker-active bar */
     .picker-bar {
       display: none; background: #1e1600;
       border: 1px dashed #ff9800; border-radius: 5px;
@@ -186,28 +168,18 @@
     .picked-panel input[type="text"]::placeholder { color: #3a3a3a; }
     .picked-panel input[type="text"]:focus { outline: none; border-color: #4caf50; }
 
-    /* Selector test box */
-    .test-box { margin-top: 10px; }
-    .test-box input[type="text"] {
-      width: 100%; background: #111; color: #ddd;
-      border: 1px solid #2e2e2e; border-radius: 4px;
-      padding: 5px 8px; font-size: 12px;
-    }
-    .test-box input[type="text"]::placeholder { color: #3a3a3a; }
-    .test-box input[type="text"]:focus { outline: none; border-color: #64b5f6; }
-    .test-result { font-size: 11px; margin-top: 4px; color: #555; min-height: 16px; }
-
-    /* Custom buttons */
-    .custom-section { margin-top: 10px; }
-    .custom-row {
+    /* Local buttons list */
+    .local-empty { font-size: 12px; color: #333; font-style: italic; padding: 4px 0 2px; }
+    .local-btn-row {
       display: flex; align-items: center; gap: 6px;
-      padding: 4px 6px; border-radius: 4px; font-size: 12px;
+      padding: 5px 4px; border-radius: 4px;
     }
-    .custom-row:hover { background: #181818; }
-    .custom-info { flex: 1; overflow: hidden; }
-    .custom-name { color: #bbb; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-    .custom-sel  { font-family: monospace; font-size: 10px; color: #444; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-    .custom-site { font-size: 10px; color: #3a3a3a; }
+    .local-btn-row:hover { background: #181818; }
+    .local-favicon { width: 14px; height: 14px; border-radius: 2px; flex-shrink: 0; }
+    .local-btn-info { flex: 1; overflow: hidden; }
+    .local-btn-name { color: #bbb; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; font-size: 12px; }
+    .local-btn-meta { font-size: 10px; color: #3a3a3a; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .local-btn-sel  { font-family: monospace; font-size: 10px; color: #3a3a3a; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
     .del-btn {
       flex: none; background: none; border: none;
       color: #3a1010; font-size: 14px; cursor: pointer;
@@ -218,11 +190,42 @@
     /* Import hidden input */
     #importFileInput { display: none; }
 
-    /* Status bar */
-    #statusBar {
-      padding: 6px 14px;
-      font-size: 11px; color: #444; min-height: 26px; line-height: 1.4;
+    /* ── Debug panel ── */
+    #debugPanel { display: none; }
+    .debug-badge {
+      display: inline-flex; align-items: center; gap: 6px;
+      font-size: 10px; font-weight: 600; text-transform: uppercase;
+      letter-spacing: 1px; color: #ff9800; margin-bottom: 8px;
     }
+    .debug-dot {
+      width: 7px; height: 7px; border-radius: 50%; background: #ff9800;
+      animation: pulse 1.6s infinite;
+    }
+    @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:.3} }
+
+    .detected-row { display: flex; align-items: center; gap: 7px; padding: 3px 0; font-size: 12px; }
+    .ind { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; }
+    .ind-found    { background: #4caf50; }
+    .ind-disabled { background: #333; border: 1px solid #444; }
+    .ind-missing  { background: #333; border: 1px dashed #555; }
+    .ind-custom   { background: #64b5f6; }
+    .ind-iframe   { background: #ab47bc; }
+    .det-label { flex: 1; }
+    .det-label.dim { color: #555; }
+    .det-health { font-size: 10px; color: #555; flex-shrink: 0; }
+
+    /* Selector test box */
+    .test-box input[type="text"] {
+      width: 100%; background: #111; color: #ddd;
+      border: 1px solid #2e2e2e; border-radius: 4px;
+      padding: 5px 8px; font-size: 12px;
+    }
+    .test-box input[type="text"]::placeholder { color: #3a3a3a; }
+    .test-box input[type="text"]:focus { outline: none; border-color: #64b5f6; }
+    .test-result { font-size: 11px; margin-top: 4px; color: #555; min-height: 16px; }
+
+    /* Status bar */
+    #statusBar { padding: 6px 14px; font-size: 11px; color: #444; min-height: 26px; line-height: 1.4; }
     #statusBar.ok  { color: #4caf50; }
     #statusBar.err { color: #f44336; }
 
@@ -267,29 +270,25 @@
     </div>
   </div>
 
-  <!-- Debug panel -->
-  <div class="section" id="debugPanel">
+  <!-- ── Local Buttons ──────────────────────────────────────────────────────── -->
+  <!-- Always visible when extension is on. Completely independent of debug mode. -->
+  <div class="section" id="localSection">
     <div class="section-inner">
-      <div class="debug-badge"><span class="debug-dot"></span> Debug Panel</div>
+      <div class="section-title">Local Buttons</div>
 
-      <div id="debugSiteInfo" style="font-size:12px;color:#666;margin-bottom:8px">Loading…</div>
-      <div id="detectedButtonsList"></div>
+      <!-- Pick trigger -->
+      <button class="pick-btn-full" id="pickElementBtn">+ Pick Element on Current Page</button>
 
-      <div class="btn-row mt6">
-        <button class="btn-green" id="clickAllBtn"    style="display:none;flex:1">Click All Now</button>
-        <button class="btn-orange" id="pickElementBtn" style="flex:1">Pick Element</button>
-      </div>
-
-      <!-- Picker-active notice -->
+      <!-- Picker-active notice (shown after clicking above) -->
       <div class="picker-bar" id="pickerBar">
         Picker active — click any element on the page.<br>
         <small style="color:#7a5500">Press Escape to cancel.</small>
         <div class="mt6">
-          <button class="btn-red" id="cancelPickerBtn">Cancel Picker</button>
+          <button class="btn-red" id="cancelPickerBtn">Cancel</button>
         </div>
       </div>
 
-      <!-- Save-picked-element panel -->
+      <!-- Save-panel (shown after an element is picked) -->
       <div class="picked-panel" id="pickedPanel">
         <div class="picked-title">Element captured — give it a label to save</div>
         <div class="picked-sel" id="pickedSel"></div>
@@ -300,17 +299,9 @@
         </div>
       </div>
 
-      <!-- Selector test box -->
-      <div class="test-box mt8">
-        <div class="section-title" style="margin-bottom:4px">Test a selector</div>
-        <input type="text" id="selectorTestInput" placeholder="e.g. button[data-testid=&quot;skip&quot;]" />
-        <div class="test-result" id="selectorTestResult"></div>
-      </div>
-
-      <!-- Custom buttons list -->
-      <div class="custom-section" id="customButtonsSection" style="display:none">
-        <div class="section-title" style="margin-top:4px">Custom Buttons</div>
-        <div id="customButtonsList"></div>
+      <!-- Saved local buttons list -->
+      <div id="localButtonsList" class="mt6">
+        <!-- populated by popup.js; shows .local-empty placeholder when empty -->
       </div>
 
       <!-- Export / Import -->
@@ -319,6 +310,28 @@
         <button class="btn-blue" id="importBtn" style="flex:1">Import JSON</button>
       </div>
       <input type="file" id="importFileInput" accept=".json,application/json" />
+    </div>
+  </div>
+
+  <!-- ── Debug Panel ────────────────────────────────────────────────────────── -->
+  <!-- Only visible when debug mode is on. Shows live detection status. -->
+  <div class="section" id="debugPanel">
+    <div class="section-inner">
+      <div class="debug-badge"><span class="debug-dot"></span> Debug Panel</div>
+
+      <div id="debugSiteInfo" style="font-size:12px;color:#555;margin-bottom:8px">Loading…</div>
+      <div id="detectedButtonsList"></div>
+
+      <div class="btn-row mt6">
+        <button class="btn-green" id="clickAllBtn" style="display:none;flex:1">Click All Now</button>
+      </div>
+
+      <!-- Selector test box -->
+      <div class="test-box mt8">
+        <div class="section-title" style="margin-bottom:4px">Test a selector</div>
+        <input type="text" id="selectorTestInput" placeholder='e.g. button[data-testid="skip"]' />
+        <div class="test-result" id="selectorTestResult"></div>
+      </div>
     </div>
   </div>
 
