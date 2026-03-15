@@ -1,145 +1,570 @@
 // content-scripts/content-script.js
+// Runs in the main frame AND every sub-frame (all_frames: true).
 
 if (typeof browser === 'undefined') {
-  // Chrome doesn't natively provide "browser", so assign it to chrome.
   window.browser = chrome;
 }
 
-// Add any buttons you want to be pressed automatically here
-const siteSelectors = {
-  netflix: {
-    domains: ['netflix.com'],
-    skipIntroButton: 'button[data-uia="player-skip-intro"]',
-    nextEpisodeButton: 'button[data-uia="player-skip-seamless-button"]',
-    skipRecapButton: 'button[data-uia="player-skip-recap"]'
-  },
-  disneyPlus: {
-    domains: ['disneyplus.com'],
-    skipRecapButton: 'button.skip__button[aria-label="SKIP RECAP"]',
-    skipIntroButton: 'button.skip__button[aria-label="SKIP INTRO"]',
-    nextEpisodeButton: 'button.skip__button:not([aria-label])',
-    altNextEpisodeButton: 'button[data-testid="icon-restart"]'
-  },
-  hulu: {
-    domains: ['hulu.com'],
-    skipRecapButton: 'button[data-automationid="player-skip-button"]',
-    skipIntroButton: 'button[data-automationid="player-skip-button"]',
-    nextEpisodeButton: 'button[data-testid="next-episode-button"]'
-  },
-  crunchyroll: {
-    domains: ['crunchyroll.com'],
-    skipAllButton: '[data-testid="SkipIntroText"]',
-  }, 
-  paramountPlus: {
-    domains: ['paramountplus.com'],
-    skipIntroButton: 'button[class="skip-button"]',
-    nextEpisodeButton: 'button[class="play-button"]'
-  },
-  amazonPrime: {
-    domains: ['amazon.com', 'primevideo.com'],
-    skipIntroButton: 'button[class*="atvwebplayersdk-skipelement-button"]',
-    nextEpisodeButton: 'div[class*="atvwebplayersdk-nextupcard-button"]'
-  }
+// ─── State ────────────────────────────────────────────────────────────────────
+
+const IS_TOP_FRAME = window === window.top;
+
+let sitesConfig    = null;
+let currentSiteId  = null;
+let currentSite    = null;
+let customButtons  = {};    // { siteId: [{label, selector}] }
+let buttonToggles  = {};    // { siteId: { label: boolean } }
+let settings = {
+  extensionEnabled: true,
+  debugMode:        false,
+  pickerMode:       false,
 };
 
-function debugLog(message, debugMode) {
-  if (debugMode) {
-    console.log(`[Skipper Debug] ${message}`);
-  }
+// Health tracking — written to storage in batches.
+let healthCache = {};
+let healthDirty = false;
+
+// Click throttle.
+let lastClickTime = 0;
+
+// Pending delayed clicks — keyed by selector.
+const pendingClicks = new Map();
+
+// ─── Cross-frame aggregation (top frame only) ─────────────────────────────────
+// Each sub-frame posts its detected buttons up to the top frame via postMessage.
+// The top frame stores them here so the popup can see a merged picture.
+const frameDetections = new Map(); // frameUrl → [{label, selector, found}]
+
+// ─── Utilities ────────────────────────────────────────────────────────────────
+
+function getTopHostname() {
+  try { return window.top.location.hostname; } catch (_) { return null; }
 }
 
-function clickButton(site, buttonKey, debugMode) {
-  const selector = siteSelectors[site][buttonKey];
-  if (!selector) {
-    debugLog(`${site}: Selector for "${buttonKey}" not found in siteSelectors`, debugMode);
-    return false;
-  }
-  const button = document.querySelector(selector);
-  if (button) {
-    button.click();
-    debugLog(`${site}: "${buttonKey}" button clicked`, debugMode);
-    return true;
-  } else {
-    debugLog(`${site}: "${buttonKey}" button not found`, debugMode);
-    return false;
-  }
+function log(...args) {
+  if (settings.debugMode) console.log('[Skipper]', ...args);
 }
 
-function handleSite(site, debugMode) {
-  let lastClickTime = 0;
-  function clickButtons() {
-    const now = Date.now();
-    // If less than 1 second has passed since the last click, skip this cycle
-    if (now - lastClickTime < 10000) return;
-    
-    let anyClicked = false;
-    Object.keys(siteSelectors[site]).forEach(key => {
-      if (key === 'domains') return;
-      const clicked = clickButton(site, key, debugMode);
-      if (clicked) {
-        anyClicked = true;
+/** All active buttons: base config filtered by per-button toggles, plus custom buttons. */
+function activeButtons() {
+  const base   = (currentSite?.buttons   || []).filter(btn => {
+    const siteToggles = buttonToggles[currentSiteId] || {};
+    return siteToggles[btn.label] !== false; // default enabled
+  });
+  const custom = customButtons[currentSiteId] || [];
+  return [...base, ...custom];
+}
+
+/** All buttons (including disabled) — used by the debug panel to show toggle state. */
+function allButtons() {
+  const base   = currentSite?.buttons   || [];
+  const custom = customButtons[currentSiteId] || [];
+  return [...base, ...custom];
+}
+
+// ─── DOM querying (with shadow DOM support) ───────────────────────────────────
+
+function queryInTree(root, selector) {
+  const direct = root.querySelector(selector);
+  if (direct) return direct;
+
+  // Walk shadow roots (only when the site config requests it — it's expensive).
+  if (currentSite?.searchShadowDom) {
+    for (const el of root.querySelectorAll('*')) {
+      if (el.shadowRoot) {
+        const found = queryInTree(el.shadowRoot, selector);
+        if (found) return found;
       }
-    });
-    if (anyClicked) {
-      // Record the time of this click to enforce a 1-second delay
-      lastClickTime = now;
     }
   }
-  clickButtons();
-  window[`${site}IntervalId`] = setInterval(clickButtons, 500);
+  return null;
 }
 
-browser.runtime.onMessage.addListener((message) => {
-  if (message.action === 'updateSettings') {
-    debugLog('Settings updated from popup', message.settings.debugMode);
+function safeQuery(selector) {
+  try { return queryInTree(document, selector); }
+  catch (e) { log('Bad selector:', selector, e.message); return null; }
+}
 
-    Object.keys(siteSelectors).forEach(site => {
-      if (window[`${site}IntervalId`]) {
-        clearInterval(window[`${site}IntervalId`]);
-      }
+// ─── Site detection ───────────────────────────────────────────────────────────
+
+function detectSite() {
+  if (!sitesConfig) return null;
+  const here = window.location.hostname;
+  const top  = getTopHostname();
+
+  for (const [id, site] of Object.entries(sitesConfig)) {
+    // Skip metadata-only keys (like "_comment")
+    if (!site?.domains) continue;
+    const domains = site.domains;
+    if (domains.some(d => here.includes(d)))       return [id, site];
+    if (top && domains.some(d => top.includes(d))) return [id, site];
+  }
+  return null;
+}
+
+// ─── Debug highlighting ───────────────────────────────────────────────────────
+
+const HL_ATTR = 'data-skipper-hl';
+
+function clearHighlights() {
+  document.querySelectorAll(`[${HL_ATTR}]`).forEach(el => {
+    el.style.removeProperty('outline');
+    el.style.removeProperty('outline-offset');
+    el.removeAttribute(HL_ATTR);
+  });
+}
+
+function applyHighlights() {
+  clearHighlights();
+  allButtons().forEach(btn => {
+    const siteToggles = buttonToggles[currentSiteId] || {};
+    const enabled = siteToggles[btn.label] !== false;
+    const el = safeQuery(btn.selector);
+    if (el) {
+      // Green = enabled, grey outline = disabled (would not auto-click)
+      el.style.outline       = enabled ? '3px solid #00e676' : '3px solid #555';
+      el.style.outlineOffset = '2px';
+      el.setAttribute(HL_ATTR, btn.label);
+    }
+  });
+  broadcastDetections(); // keep cross-frame data fresh
+}
+
+// ─── Click logic ──────────────────────────────────────────────────────────────
+
+function scheduleClick(btn, el) {
+  if (pendingClicks.has(btn.selector)) return; // already queued
+  const delay = btn.delayMs || 0;
+
+  const timerId = setTimeout(() => {
+    pendingClicks.delete(btn.selector);
+    // Re-query in case the DOM changed during the delay.
+    const current = safeQuery(btn.selector);
+    if (current) {
+      log(`Clicking (${delay}ms delay): ${btn.label}`);
+      current.click();
+      lastClickTime = Date.now();
+      updateHealth(btn.label);
+    }
+  }, delay);
+
+  pendingClicks.set(btn.selector, timerId);
+}
+
+function runClicks() {
+  const now = Date.now();
+  if (now - lastClickTime < 10_000) return; // 10-second cooldown
+
+  activeButtons().forEach(btn => {
+    const el = safeQuery(btn.selector);
+    if (el) scheduleClick(btn, el);
+  });
+
+  broadcastDetections();
+}
+
+/** Bypass cooldown — used by the debug "Click All Now" action. */
+function forceClick() {
+  lastClickTime = 0;
+  pendingClicks.forEach(clearTimeout);
+  pendingClicks.clear();
+  runClicks();
+}
+
+// ─── Selector health tracking ─────────────────────────────────────────────────
+
+function updateHealth(label) {
+  const key = `${currentSiteId}__${label}`;
+  const now = Date.now();
+  // Only mark dirty if the stored value is absent or stale by > 1 hour.
+  if (!healthCache[key] || now - healthCache[key] > 3_600_000) {
+    healthCache[key] = now;
+    healthDirty = true;
+  }
+}
+
+// Flush health cache to storage every 60 s.
+setInterval(async () => {
+  if (!healthDirty) return;
+  try {
+    await browser.storage.local.set({ healthData: healthCache });
+    healthDirty = false;
+  } catch (_) {}
+}, 60_000);
+
+// ─── Cross-frame detection broadcasting ───────────────────────────────────────
+
+function broadcastDetections() {
+  if (IS_TOP_FRAME || !currentSiteId) return;
+  const detected = allButtons().map(btn => ({
+    label:    btn.label,
+    selector: btn.selector,
+    found:    !!safeQuery(btn.selector),
+    custom:   !!btn.custom,
+    enabled:  (buttonToggles[currentSiteId] || {})[btn.label] !== false,
+  }));
+
+  try {
+    window.top.postMessage({
+      type:     'skipper-frame-detection',
+      siteId:   currentSiteId,
+      frameUrl: window.location.href,
+      detected,
+    }, '*');
+  } catch (_) {
+    try {
+      window.parent.postMessage({
+        type:     'skipper-frame-detection',
+        siteId:   currentSiteId,
+        frameUrl: window.location.href,
+        detected,
+      }, '*');
+    } catch (_) {}
+  }
+}
+
+// Top frame: collect cross-frame detections.
+if (IS_TOP_FRAME) {
+  window.addEventListener('message', e => {
+    if (e.data?.type !== 'skipper-frame-detection') return;
+    frameDetections.set(e.data.frameUrl, {
+      siteId:   e.data.siteId,
+      detected: e.data.detected,
     });
+  });
+}
 
-    if (message.settings.extensionEnabled) {
-      Object.entries(siteSelectors).forEach(([site, selectors]) => {
-        if (message.settings.sites[site] !== false &&
-            selectors.domains &&
-            selectors.domains.some(domain => window.location.hostname.includes(domain))) {
-          handleSite(site, message.settings.debugMode);
-        }
+// ─── Observer + interval (replacing the old plain setInterval) ────────────────
+
+let mutationObserver  = null;
+let fallbackIntervalId = null;
+let debounceTimer     = null;
+
+function onMutation() {
+  clearTimeout(debounceTimer);
+  debounceTimer = setTimeout(runCheck, 100);
+}
+
+function runCheck() {
+  if (!currentSiteId || !settings.extensionEnabled) return;
+  if (settings.pickerMode) return;
+  if (settings.debugMode) applyHighlights();
+  else runClicks();
+}
+
+function startObserving() {
+  stopObserving();
+  mutationObserver = new MutationObserver(onMutation);
+  mutationObserver.observe(document.documentElement, {
+    childList:       true,
+    subtree:         true,
+    attributes:      true,
+    attributeFilter: ['class', 'style', 'hidden', 'aria-hidden', 'data-testid'],
+  });
+  // Safety-net interval in case the observer misses purely CSS visibility changes.
+  fallbackIntervalId = setInterval(runCheck, 5_000);
+  runCheck(); // immediate first pass
+}
+
+function stopObserving() {
+  mutationObserver?.disconnect();
+  mutationObserver = null;
+  if (fallbackIntervalId !== null) { clearInterval(fallbackIntervalId); fallbackIntervalId = null; }
+  clearTimeout(debounceTimer);
+  pendingClicks.forEach(clearTimeout);
+  pendingClicks.clear();
+}
+
+// ─── Element picker ───────────────────────────────────────────────────────────
+
+let pickerActive  = false;
+let pickerHovered = null;
+
+function generateSelector(el) {
+  const stableDataAttrs = ['data-testid', 'data-automationid', 'data-uia', 'data-qa', 'data-id'];
+
+  for (const attr of stableDataAttrs) {
+    const val = el.getAttribute(attr);
+    if (!val) continue;
+    const s = `[${attr}="${val}"]`;
+    try {
+      return document.querySelectorAll(s).length <= 3 ? s : `${el.tagName.toLowerCase()}${s}`;
+    } catch (_) {}
+  }
+
+  if (el.id && !/^\d/.test(el.id) && el.id.length < 40) {
+    const s = `#${el.id}`;
+    try { if (document.querySelectorAll(s).length === 1) return s; } catch (_) {}
+  }
+
+  const aria = el.getAttribute('aria-label');
+  if (aria) {
+    const s = `${el.tagName.toLowerCase()}[aria-label="${aria.replace(/"/g, '\\"')}"]`;
+    try { if (document.querySelectorAll(s).length <= 3) return s; } catch (_) {}
+  }
+
+  const stableClasses = [...el.classList].filter(c =>
+    c.length > 2 &&
+    !/^\d/.test(c) &&
+    !/^[a-z]+-[a-z0-9]{5,}$/.test(c) &&
+    !(/[a-z][A-Z]/.test(c) && /[A-Z][a-z]/.test(c) && c.length > 12)
+  );
+  if (stableClasses.length > 0) {
+    const s = `${el.tagName.toLowerCase()}.${stableClasses.slice(0, 2).join('.')}`;
+    try { if (document.querySelectorAll(s).length <= 5) return s; } catch (_) {}
+  }
+
+  const role = el.getAttribute('role');
+  if (role) return `${el.tagName.toLowerCase()}[role="${role}"]`;
+  return el.tagName.toLowerCase();
+}
+
+function pickerMouseover(e) {
+  e.stopPropagation();
+  if (pickerHovered && pickerHovered !== e.target) clearPickerHover();
+  pickerHovered = e.target;
+  pickerHovered.style.outline       = '2px dashed #ff6d00';
+  pickerHovered.style.outlineOffset = '2px';
+  pickerHovered.style.cursor        = 'crosshair';
+}
+
+function clearPickerHover() {
+  if (!pickerHovered) return;
+  pickerHovered.style.removeProperty('outline');
+  pickerHovered.style.removeProperty('outline-offset');
+  pickerHovered.style.removeProperty('cursor');
+  pickerHovered = null;
+}
+
+function pickerMouseout(e) {
+  if (pickerHovered === e.target) clearPickerHover();
+}
+
+function pickerClick(e) {
+  e.preventDefault();
+  e.stopPropagation();
+
+  const selector  = generateSelector(e.target);
+  const labelText = (e.target.textContent || '').trim().substring(0, 60)
+                 || e.target.getAttribute('aria-label')
+                 || e.target.tagName.toLowerCase();
+
+  deactivatePicker();
+
+  const result = {
+    action:   'elementPicked',
+    selector,
+    label:    labelText,
+    siteId:   currentSiteId,
+    isIframe: !IS_TOP_FRAME,
+    frameUrl: window.location.href,
+  };
+
+  browser.storage.local.set({ pickerMode: false, lastPickedButton: result });
+  browser.runtime.sendMessage(result).catch(() => {});
+  showPickerToast(selector);
+}
+
+function pickerKeydown(e) {
+  if (e.key === 'Escape') {
+    deactivatePicker();
+    browser.storage.local.set({ pickerMode: false });
+    browser.runtime.sendMessage({ action: 'pickerCancelled' }).catch(() => {});
+  }
+}
+
+function showPickerToast(selector) {
+  const el = document.createElement('div');
+  el.style.cssText = `
+    position:fixed;top:16px;right:16px;z-index:2147483647;
+    background:#121212;color:#4caf50;border:2px solid #4caf50;border-radius:8px;
+    padding:10px 14px;font-family:system-ui,sans-serif;font-size:13px;
+    max-width:320px;word-break:break-all;line-height:1.5;
+    box-shadow:0 4px 24px rgba(0,0,0,.6);
+  `;
+  el.innerHTML = `
+    <strong>Element captured!</strong><br>
+    <span style="color:#aaa;font-size:11px;font-family:monospace">${selector}</span><br>
+    <span style="color:#777;font-size:11px">Open Skipper to label and save it.</span>
+  `;
+  document.body.appendChild(el);
+  setTimeout(() => el.remove(), 5_000);
+}
+
+function activatePicker() {
+  if (pickerActive) return;
+  pickerActive = true;
+  stopObserving();
+  clearHighlights();
+  document.addEventListener('mouseover', pickerMouseover, true);
+  document.addEventListener('mouseout',  pickerMouseout,  true);
+  document.addEventListener('click',     pickerClick,     true);
+  document.addEventListener('keydown',   pickerKeydown,   true);
+  log('Picker activated in', IS_TOP_FRAME ? 'main frame' : 'iframe');
+}
+
+function deactivatePicker() {
+  if (!pickerActive) return;
+  pickerActive = false;
+  clearPickerHover();
+  document.removeEventListener('mouseover', pickerMouseover, true);
+  document.removeEventListener('mouseout',  pickerMouseout,  true);
+  document.removeEventListener('click',     pickerClick,     true);
+  document.removeEventListener('keydown',   pickerKeydown,   true);
+  log('Picker deactivated');
+}
+
+// ─── Apply settings ───────────────────────────────────────────────────────────
+
+function applySettings() {
+  if (!settings.extensionEnabled || !currentSiteId) {
+    stopObserving();
+    clearHighlights();
+    deactivatePicker();
+    return;
+  }
+
+  if (settings.pickerMode) {
+    stopObserving();
+    activatePicker();
+  } else if (settings.debugMode) {
+    deactivatePicker();
+    startObserving();
+  } else {
+    deactivatePicker();
+    clearHighlights();
+    startObserving();
+  }
+}
+
+// ─── Message listener ─────────────────────────────────────────────────────────
+
+browser.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
+  switch (msg.action) {
+
+    case 'updateSettings':
+      if (msg.settings.customButtons  !== undefined) customButtons  = msg.settings.customButtons;
+      if (msg.settings.buttonToggles  !== undefined) buttonToggles  = msg.settings.buttonToggles;
+      Object.assign(settings, msg.settings);
+      applySettings();
+      break;
+
+    case 'activatePicker':
+      settings.pickerMode = true;
+      activatePicker();
+      break;
+
+    case 'deactivatePicker':
+      settings.pickerMode = false;
+      deactivatePicker();
+      applySettings();
+      break;
+
+    case 'clickDetected':
+      if (settings.debugMode && currentSiteId) {
+        forceClick();
+        sendResponse({ ok: true });
+      }
+      break;
+
+    case 'getDetectedButtons': {
+      const siteToggleMap = buttonToggles[currentSiteId] || {};
+
+      // Own frame detections
+      const ownDetected = allButtons().map(btn => ({
+        label:    btn.label,
+        selector: btn.selector,
+        found:    !!safeQuery(btn.selector),
+        custom:   !!btn.custom,
+        enabled:  siteToggleMap[btn.label] !== false,
+        lastSeen: healthCache[`${currentSiteId}__${btn.label}`] || null,
+        frameUrl: window.location.href,
+        isIframe: !IS_TOP_FRAME,
+      }));
+
+      // Merge cross-frame detections collected via postMessage (top frame only)
+      const crossFrameDetected = [];
+      if (IS_TOP_FRAME) {
+        frameDetections.forEach(({ siteId, detected }, frameUrl) => {
+          if (siteId === currentSiteId) {
+            detected.forEach(btn => crossFrameDetected.push({ ...btn, frameUrl, isIframe: true }));
+          }
+        });
+      }
+
+      sendResponse({
+        siteId:   currentSiteId,
+        siteName: currentSite?.name || currentSiteId,
+        detected: [...ownDetected, ...crossFrameDetected],
       });
+      break;
+    }
+
+    case 'testSelector': {
+      try {
+        const all  = document.querySelectorAll(msg.selector);
+        const inShadow = currentSite?.searchShadowDom ? !!safeQuery(msg.selector) : false;
+        sendResponse({ count: all.length, shadowHit: inShadow });
+      } catch (e) {
+        sendResponse({ count: 0, error: e.message });
+      }
+      break;
     }
   }
 });
 
-(function init() {
-  console.log("Typeof browser:", typeof browser);
-  const hostname = window.location.hostname;
-  browser.storage.local.get(['extensionEnabled', 'sites', 'debugMode'])
-    .then((result) => {
-      const extensionEnabled = result.extensionEnabled !== false;
-      const sites = result.sites || {};
-      const debugMode = result.debugMode === true;
-      if (!extensionEnabled) {
-        debugLog('Extension is globally disabled.', debugMode);
-        return;
-      }
-      let supportedSiteFound = false;
-      Object.entries(siteSelectors).forEach(([site, selectors]) => {
-        if (sites[site] !== false &&
-            selectors.domains &&
-            selectors.domains.some(domain => hostname.includes(domain))) {
-          debugLog(`Successfully loaded on site ${hostname}.`, debugMode);
-          handleSite(site, debugMode);
-          supportedSiteFound = true;
-        }
-      });
-      if (!supportedSiteFound && debugMode) {
-        setInterval(() => {
-          debugLog('Invalid site: This site is not supported by Skipper.', debugMode);
-        }, 500);
-      }
-    })
-    .catch((error) => {
-      console.error('Error initializing Skipper extension:', error);
-    });
-})();
+// ─── Init ─────────────────────────────────────────────────────────────────────
+
+async function init() {
+  try {
+    // 1. Get sites config — prefer background's cached copy, fall back to
+    //    direct fetch of the bundled file.
+    try {
+      const resp = await browser.runtime.sendMessage({ action: 'getSitesConfig' });
+      sitesConfig = resp?.config ?? null;
+    } catch (_) {}
+
+    if (!sitesConfig) {
+      const r = await fetch(browser.runtime.getURL('sites.json'));
+      sitesConfig = await r.json();
+    }
+
+    // 2. Load persisted settings.
+    const stored = await browser.storage.local.get([
+      'extensionEnabled', 'sites', 'debugMode',
+      'customButtons', 'buttonToggles', 'pickerMode', 'healthData',
+    ]);
+
+    settings.extensionEnabled = stored.extensionEnabled !== false;
+    settings.debugMode        = stored.debugMode  === true;
+    settings.pickerMode       = stored.pickerMode === true;
+    customButtons             = stored.customButtons  || {};
+    buttonToggles             = stored.buttonToggles  || {};
+    healthCache               = stored.healthData     || {};
+
+    if (!settings.extensionEnabled) { log('Extension disabled'); return; }
+
+    // 3. Detect site.
+    const match = detectSite();
+    if (!match) {
+      log(`No site match for: ${window.location.hostname}` +
+          (!IS_TOP_FRAME ? ` (iframe, top: ${getTopHostname()})` : ''));
+      return;
+    }
+
+    const [siteId, site]   = match;
+    const enabledSites     = stored.sites || {};
+    if (enabledSites[siteId] === false) { log(`${siteId} disabled by user`); return; }
+
+    currentSiteId = siteId;
+    currentSite   = site;
+
+    log(`Active on "${siteId}" — ${IS_TOP_FRAME ? 'main frame' : 'iframe @ ' + window.location.hostname}`);
+    applySettings();
+
+  } catch (err) {
+    console.error('[Skipper] Init error:', err);
+  }
+}
+
+init();
