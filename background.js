@@ -97,4 +97,23 @@ browser.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
       .catch(() => sendResponse({ ok: false }));
     return true;
   }
+
+  if (msg.action === 'candidatesFound') {
+    const tabId = _sender.tab?.id;
+    if (tabId != null) {
+      browser.action.setBadgeText({ text: String(msg.count), tabId });
+      browser.action.setBadgeBackgroundColor({ color: '#ff9800', tabId });
+    }
+    sendResponse({ ok: true });
+    return true;
+  }
+
+  if (msg.action === 'clearCandidateBadge') {
+    const tabId = _sender.tab?.id;
+    if (tabId != null) {
+      browser.action.setBadgeText({ text: '', tabId });
+    }
+    sendResponse({ ok: true });
+    return true;
+  }
 });

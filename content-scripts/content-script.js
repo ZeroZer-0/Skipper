@@ -30,6 +30,29 @@ let lastClickTime = 0;
 // Pending delayed clicks — keyed by selector.
 const pendingClicks = new Map();
 
+// Candidate detection state.
+let candidateWatchEnabled = false;
+let candidateCache        = new Map();  // selector → ScoredCandidate
+let candidateBadgeCount   = 0;
+let candidateScanDebounce = null;
+
+// ─── Candidate scoring constants ──────────────────────────────────────────────
+
+const MIN_CANDIDATE_SCORE  = 40;
+const HIGH_CANDIDATE_SCORE = 60;
+const MAX_TEXT_LEN = 40;
+
+const TEXT_PATTERNS = [
+  { re: /^(skip intro|skip recap|skip credits|skip opening|next episode|skip outro)$/i, pts: 35 },
+  { re: /^skip\s/i,                                    pts: 25 },
+  { re: /\b(intro|recap|credits|opening|episode)\b/i,  pts: 20 },
+  { re: /\bnext\s+(episode|chapter)\b/i,               pts: 20 },
+  { re: /\bskip\b/i,                                   pts: 10 },
+  { re: /\bnext\b/i,                                   pts:  5 },
+];
+const ATTR_TERMS  = /skip|next.?ep|intro|recap|credits|episode|outro|opening/i;
+const CLASS_TERMS = /\b(skip|next.ep|intro|recap|credits|episode)\b/i;
+
 // ─── Cross-frame aggregation (top frame only) ─────────────────────────────────
 // Each sub-frame posts its detected buttons up to the top frame via postMessage.
 // The top frame stores them here so the popup can see a merged picture.
@@ -250,6 +273,7 @@ function runCheck() {
   if (settings.pickerMode) return;
   if (settings.debugMode) applyHighlights();
   else runClicks();
+  if (candidateWatchEnabled) runCandidateScan();
 }
 
 function startObserving() {
@@ -273,6 +297,8 @@ function stopObserving() {
   clearTimeout(debounceTimer);
   pendingClicks.forEach(clearTimeout);
   pendingClicks.clear();
+  candidateWatchEnabled = false;
+  clearTimeout(candidateScanDebounce);
 }
 
 // ─── Element picker ───────────────────────────────────────────────────────────
@@ -414,6 +440,94 @@ function deactivatePicker() {
   log('Picker deactivated');
 }
 
+// ─── Candidate detection ──────────────────────────────────────────────────────
+
+function isElementVisible(el) {
+  const r = el.getBoundingClientRect();
+  if (r.width === 0 || r.height === 0) return false;
+  const s = window.getComputedStyle(el);
+  return s.display !== 'none' && s.visibility !== 'hidden' && s.opacity !== '0';
+}
+
+function isAlreadyTracked(selector) {
+  return activeButtons().some(btn => btn.selector === selector);
+}
+
+function scoreElement(el) {
+  const text = (el.textContent || '').trim();
+  if (!text || text.length > MAX_TEXT_LEN) return null;
+
+  let score = 0;
+  const reasons = [];
+
+  // 1. Text pattern scoring
+  for (const { re, pts } of TEXT_PATTERNS) {
+    if (re.test(text)) { score += pts; reasons.push(`text:${pts}`); break; }
+  }
+
+  // 2. Attribute scoring
+  const attrs = ['data-testid', 'data-automationid', 'data-uia', 'aria-label'];
+  for (const attr of attrs) {
+    const val = el.getAttribute(attr) || '';
+    if (ATTR_TERMS.test(val)) { score += 5; reasons.push(`${attr}:5`); }
+  }
+  if (CLASS_TERMS.test(el.className || '')) { score += 4; reasons.push('class:4'); }
+
+  // 3. Element type bonus
+  const tag  = el.tagName.toLowerCase();
+  const role = el.getAttribute('role');
+  if (tag === 'button' || role === 'button') { score += 2; reasons.push('tag:2'); }
+
+  // 4. Size guard — must be visible and not too wide (nav bars, etc.)
+  if (!isElementVisible(el)) return null;
+  const rect = el.getBoundingClientRect();
+  if (rect.width > 300) return null;
+
+  if (score < MIN_CANDIDATE_SCORE) return null;
+
+  const selector = generateSelector(el);
+  if (isAlreadyTracked(selector)) return null;
+
+  return {
+    score,
+    label:      text.substring(0, 60) || el.getAttribute('aria-label') || tag,
+    selector,
+    reasons,
+    scoreLabel: score >= HIGH_CANDIDATE_SCORE ? 'High' : 'Medium',
+  };
+}
+
+function scanForCandidates() {
+  const candidates = [];
+  const seen = new Set();
+  for (const el of document.querySelectorAll('button,[role=button],[tabindex]')) {
+    try {
+      const result = scoreElement(el);
+      if (!result) continue;
+      if (seen.has(result.selector)) continue;
+      seen.add(result.selector);
+      candidates.push(result);
+    } catch (_) {}
+  }
+  candidates.sort((a, b) => b.score - a.score);
+  return candidates.slice(0, 10);
+}
+
+function runCandidateScan() {
+  clearTimeout(candidateScanDebounce);
+  candidateScanDebounce = setTimeout(() => {
+    const results = scanForCandidates();
+    candidateCache.clear();
+    results.forEach(c => candidateCache.set(c.selector, c));
+    candidateBadgeCount = results.length;
+    if (candidateBadgeCount > 0) {
+      browser.runtime.sendMessage({ action: 'candidatesFound', count: candidateBadgeCount }).catch(() => {});
+    }
+    // Also notify popup if it's open
+    browser.runtime.sendMessage({ action: 'candidatesUpdated', count: candidateBadgeCount }).catch(() => {});
+  }, 2_000);
+}
+
 // ─── Apply settings ───────────────────────────────────────────────────────────
 
 function applySettings() {
@@ -430,10 +544,12 @@ function applySettings() {
   } else if (settings.debugMode) {
     deactivatePicker();
     startObserving();
+    candidateWatchEnabled = true;
   } else {
     deactivatePicker();
     clearHighlights();
     startObserving();
+    candidateWatchEnabled = true;
   }
 }
 
@@ -510,6 +626,14 @@ browser.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
       }
       break;
     }
+
+    case 'getCandidates':
+      sendResponse({ siteId: currentSiteId, candidates: scanForCandidates() });
+      break;
+
+    case 'enableCandidateWatch':
+      candidateWatchEnabled = !!msg.enabled;
+      break;
   }
 });
 
