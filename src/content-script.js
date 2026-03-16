@@ -122,15 +122,26 @@ function applyHighlights() {
     const enabled = (buttonToggles[currentSiteId] || {})[btn.label] !== false;
     const el = domQuery(btn.selector);
     if (el) {
-      el.style.outline       = enabled ? '3px solid #00e676' : '3px solid #555';
-      el.style.outlineOffset = '2px';
-      el.setAttribute(HL_ATTR, btn.label);
+      const target = findClickTarget(el);
+      target.style.outline       = enabled ? '3px solid #00e676' : '3px solid #555';
+      target.style.outlineOffset = '2px';
+      target.setAttribute(HL_ATTR, btn.label);
     }
   });
   broadcastDetections();
 }
 
 // ─── Click logic ──────────────────────────────────────────────────────────────
+
+/**
+ * If the matched element is a wrapper div (not itself clickable), try to find
+ * the real button inside it. Falls back to the element itself.
+ */
+function findClickTarget(el) {
+  if (['BUTTON', 'A', 'INPUT', 'SUMMARY'].includes(el.tagName)) return el;
+  const inner = el.querySelector('button, a, input[type="submit"]');
+  return inner ?? el;
+}
 
 function scheduleClick(btn, el) {
   if (pendingClicks.has(btn.selector)) return;
@@ -140,8 +151,9 @@ function scheduleClick(btn, el) {
     pendingClicks.delete(btn.selector);
     const current = domQuery(btn.selector);
     if (current) {
+      const target = findClickTarget(current);
       log(`Clicking (${delay}ms delay): ${btn.label}`);
-      current.click();
+      target.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true, composed: true }));
       lastClickTime = Date.now();
       updateHealth(btn.label);
     }
@@ -340,7 +352,7 @@ browser.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
       break;
 
     case 'clickDetected':
-      if (settings.debugMode && currentSiteId) {
+      if (currentSiteId) {
         forceClick();
         sendResponse({ ok: true });
       }
