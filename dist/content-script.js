@@ -272,7 +272,7 @@
     const here = window.location.hostname;
     const top = getTopHostname();
     for (const [id, site] of Object.entries(sitesConfig)) {
-      if (!site?.domains) continue;
+      if (!Array.isArray(site?.domains)) continue;
       const domains = site.domains;
       if (domains.some((d) => here.includes(d))) return [id, site];
       if (top && domains.some((d) => top.includes(d))) return [id, site];
@@ -293,12 +293,18 @@
       const enabled = (buttonToggles[currentSiteId] || {})[btn.label] !== false;
       const el = domQuery(btn.selector);
       if (el) {
-        el.style.outline = enabled ? "3px solid #00e676" : "3px solid #555";
-        el.style.outlineOffset = "2px";
-        el.setAttribute(HL_ATTR, btn.label);
+        const target = findClickTarget(el);
+        target.style.outline = enabled ? "3px solid #00e676" : "3px solid #555";
+        target.style.outlineOffset = "2px";
+        target.setAttribute(HL_ATTR, btn.label);
       }
     });
     broadcastDetections();
+  }
+  function findClickTarget(el) {
+    if (["BUTTON", "A", "INPUT", "SUMMARY"].includes(el.tagName)) return el;
+    const inner = el.querySelector('button, a, input[type="submit"]');
+    return inner ?? el;
   }
   function scheduleClick(btn, el) {
     if (pendingClicks.has(btn.selector)) return;
@@ -307,8 +313,9 @@
       pendingClicks.delete(btn.selector);
       const current = domQuery(btn.selector);
       if (current) {
+        const target = findClickTarget(current);
         log(`Clicking (${delay}ms delay): ${btn.label}`);
-        current.click();
+        target.dispatchEvent(new MouseEvent("click", { bubbles: true, cancelable: true, composed: true }));
         lastClickTime = Date.now();
         updateHealth(btn.label);
       }
@@ -369,13 +376,27 @@
       }
     }
   }
+  if (!IS_TOP_FRAME) {
+    window.addEventListener("message", (e) => {
+      if (e.data?.type !== "skipper-test-selector") return;
+      try {
+        const count = document.querySelectorAll(e.data.selector).length;
+        window.parent.postMessage(
+          { type: "skipper-selector-result", reqId: e.data.reqId, count },
+          "*"
+        );
+      } catch (_) {
+      }
+    });
+  }
   if (IS_TOP_FRAME) {
     window.addEventListener("message", (e) => {
-      if (e.data?.type !== "skipper-frame-detection") return;
-      frameDetections.set(e.data.frameUrl, {
-        siteId: e.data.siteId,
-        detected: e.data.detected
-      });
+      if (e.data?.type === "skipper-frame-detection") {
+        frameDetections.set(e.data.frameUrl, {
+          siteId: e.data.siteId,
+          detected: e.data.detected
+        });
+      }
     });
   }
   var mutationObserver = null;
@@ -487,7 +508,7 @@
         applySettings();
         break;
       case "clickDetected":
-        if (settings.debugMode && currentSiteId) {
+        if (currentSiteId) {
           forceClick();
           sendResponse({ ok: true });
         }
@@ -521,14 +542,41 @@
       }
       case "testSelector": {
         try {
-          const all = document.querySelectorAll(msg.selector);
+          const ownCount = document.querySelectorAll(msg.selector).length;
           const inShadow = currentSite?.searchShadowDom ? !!domQuery(msg.selector) : false;
-          sendResponse({ count: all.length, shadowHit: inShadow });
+          if (!IS_TOP_FRAME) {
+            sendResponse({ count: ownCount, shadowHit: inShadow });
+            break;
+          }
+          const reqId = Math.random().toString(36).slice(2);
+          let frameCount = 0;
+          let inIframe = false;
+          const onResult = (e) => {
+            if (e.data?.type === "skipper-selector-result" && e.data.reqId === reqId) {
+              frameCount += e.data.count;
+              if (e.data.count > 0) inIframe = true;
+            }
+          };
+          window.addEventListener("message", onResult);
+          document.querySelectorAll("iframe").forEach((f) => {
+            try {
+              f.contentWindow.postMessage({ type: "skipper-test-selector", selector: msg.selector, reqId }, "*");
+            } catch (_) {
+            }
+          });
+          setTimeout(() => {
+            window.removeEventListener("message", onResult);
+            sendResponse({ count: ownCount + frameCount, shadowHit: inShadow, inIframe });
+          }, 500);
+          return true;
         } catch (e) {
           sendResponse({ count: 0, error: e.message });
         }
         break;
       }
+      case "ping":
+        sendResponse({ ok: true });
+        break;
       case "getCandidates":
         sendResponse({
           siteId: currentSiteId,

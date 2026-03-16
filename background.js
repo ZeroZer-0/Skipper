@@ -56,16 +56,17 @@ async function fetchBundled() {
  */
 async function refreshConfig() {
   const remote = await fetchRemote();
+  const source = remote ? 'remote' : 'bundled';
   const config = remote ?? (await fetchBundled());
   if (!config) return null;
 
   const store = sessionStore();
   await store.set({
     [SESSION_KEY]:            config,
-    [`${SESSION_KEY}_source`]: remote ? 'remote' : 'bundled',
+    [`${SESSION_KEY}_source`]: source,
     [`${SESSION_KEY}_ts`]:     Date.now(),
   });
-  return config;
+  return { config, source };
 }
 
 async function getCachedConfig() {
@@ -81,21 +82,23 @@ browser.runtime.onStartup.addListener(refreshConfig);
 
 // ─── Message handler ──────────────────────────────────────────────────────────
 
-browser.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
+// Firefox requires the listener to return a Promise for async responses.
+// The `sendResponse + return true` pattern has known reliability issues in Firefox.
+browser.runtime.onMessage.addListener((msg, _sender) => {
   if (msg.action === 'getSitesConfig') {
     // If nothing is cached yet (fresh install before onInstalled fires),
     // go fetch it now.
-    getCachedConfig()
-      .then(config => config ? sendResponse({ config }) : refreshConfig().then(c => sendResponse({ config: c })))
-      .catch(() => sendResponse({ config: null }));
-    return true; // keep channel open for async response
+    return getCachedConfig()
+      .then(config => config
+        ? { config }
+        : refreshConfig().then(r => ({ config: r?.config ?? null })))
+      .catch(() => ({ config: null }));
   }
 
   if (msg.action === 'refreshConfig') {
-    refreshConfig()
-      .then(config => sendResponse({ ok: !!config }))
-      .catch(() => sendResponse({ ok: false }));
-    return true;
+    return refreshConfig()
+      .then(result => ({ ok: !!result, source: result?.source ?? null }))
+      .catch(() => ({ ok: false }));
   }
 
   if (msg.action === 'candidatesFound') {
@@ -104,8 +107,7 @@ browser.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
       browser.action.setBadgeText({ text: String(msg.count), tabId });
       browser.action.setBadgeBackgroundColor({ color: '#ff9800', tabId });
     }
-    sendResponse({ ok: true });
-    return true;
+    return Promise.resolve({ ok: true });
   }
 
   if (msg.action === 'clearCandidateBadge') {
@@ -113,7 +115,6 @@ browser.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
     if (tabId != null) {
       browser.action.setBadgeText({ text: '', tabId });
     }
-    sendResponse({ ok: true });
-    return true;
+    return Promise.resolve({ ok: true });
   }
 });
