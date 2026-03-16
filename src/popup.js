@@ -573,7 +573,7 @@ selectorTestInput.addEventListener('input', () => {
       } else {
         selectorTestResult.style.color = resp.count > 0 ? '#4caf50' : '#555';
         selectorTestResult.textContent = resp.count > 0
-          ? `Found ${resp.count} element(s)${resp.shadowHit ? ' (shadow DOM)' : ''}`
+          ? `Found ${resp.count} element(s)${resp.shadowHit ? ' (shadow DOM)' : ''}${resp.inIframe ? ' (in iframe)' : ''}`
           : 'No elements matched';
       }
     } catch (_) {

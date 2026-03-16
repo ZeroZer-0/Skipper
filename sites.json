@@ -45,9 +45,8 @@
     "name": "Crunchyroll",
     "domains": ["crunchyroll.com", "static.crunchyroll.com"],
     "buttons": [
-      { "label": "Skip Intro",   "selector": "[data-testid=\"SkipIntroText\"]" },
-      { "label": "Skip Outro",   "selector": "[data-testid=\"skipButton\"]" },
-      { "label": "Next Episode", "selector": "[data-testid=\"nextEpisodeButton\"]" }
+      { "label": "Skip Intro / Recap", "selector": "[data-testid=\"skipIntroText\"]" },
+      { "label": "Next Episode",       "selector": "[data-testid=\"nextEpisodeButton\"]" }
     ]
   },
 

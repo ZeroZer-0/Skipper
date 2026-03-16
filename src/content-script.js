@@ -220,13 +220,28 @@ function broadcastDetections() {
   catch (_) { try { window.parent.postMessage(msg, '*'); } catch (_) {} }
 }
 
+// Child frames: respond to selector test requests from top frame.
+if (!IS_TOP_FRAME) {
+  window.addEventListener('message', e => {
+    if (e.data?.type !== 'skipper-test-selector') return;
+    try {
+      const count = document.querySelectorAll(e.data.selector).length;
+      window.parent.postMessage(
+        { type: 'skipper-selector-result', reqId: e.data.reqId, count },
+        '*'
+      );
+    } catch (_) {}
+  });
+}
+
 if (IS_TOP_FRAME) {
   window.addEventListener('message', e => {
-    if (e.data?.type !== 'skipper-frame-detection') return;
-    frameDetections.set(e.data.frameUrl, {
-      siteId:   e.data.siteId,
-      detected: e.data.detected,
-    });
+    if (e.data?.type === 'skipper-frame-detection') {
+      frameDetections.set(e.data.frameUrl, {
+        siteId:   e.data.siteId,
+        detected: e.data.detected,
+      });
+    }
   });
 }
 
@@ -390,9 +405,34 @@ browser.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
 
     case 'testSelector': {
       try {
-        const all      = document.querySelectorAll(msg.selector);
+        const ownCount = document.querySelectorAll(msg.selector).length;
         const inShadow = currentSite?.searchShadowDom ? !!domQuery(msg.selector) : false;
-        sendResponse({ count: all.length, shadowHit: inShadow });
+
+        if (!IS_TOP_FRAME) {
+          sendResponse({ count: ownCount, shadowHit: inShadow });
+          break;
+        }
+
+        // Top frame: also query child iframes via postMessage, wait 500ms.
+        const reqId = Math.random().toString(36).slice(2);
+        let frameCount = 0;
+        let inIframe   = false;
+        const onResult = e => {
+          if (e.data?.type === 'skipper-selector-result' && e.data.reqId === reqId) {
+            frameCount += e.data.count;
+            if (e.data.count > 0) inIframe = true;
+          }
+        };
+        window.addEventListener('message', onResult);
+        document.querySelectorAll('iframe').forEach(f => {
+          try { f.contentWindow.postMessage({ type: 'skipper-test-selector', selector: msg.selector, reqId }, '*'); }
+          catch (_) {}
+        });
+        setTimeout(() => {
+          window.removeEventListener('message', onResult);
+          sendResponse({ count: ownCount + frameCount, shadowHit: inShadow, inIframe });
+        }, 500);
+        return true; // async sendResponse
       } catch (e) {
         sendResponse({ count: 0, error: e.message });
       }
