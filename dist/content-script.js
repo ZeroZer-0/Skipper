@@ -272,7 +272,7 @@
     const here = window.location.hostname;
     const top = getTopHostname();
     for (const [id, site] of Object.entries(sitesConfig)) {
-      if (!site?.domains) continue;
+      if (!Array.isArray(site?.domains)) continue;
       const domains = site.domains;
       if (domains.some((d) => here.includes(d))) return [id, site];
       if (top && domains.some((d) => top.includes(d))) return [id, site];
@@ -529,6 +529,9 @@
         }
         break;
       }
+      case "ping":
+        sendResponse({ ok: true });
+        break;
       case "getCandidates":
         sendResponse({
           siteId: currentSiteId,

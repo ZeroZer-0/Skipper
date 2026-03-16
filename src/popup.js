@@ -28,14 +28,6 @@ const refreshConfigBtn     = document.getElementById('refreshConfigBtn');
 const siteOptions          = document.getElementById('siteOptions');
 const siteList             = document.getElementById('siteList');
 const localSection         = document.getElementById('localSection');
-const pickElementBtn       = document.getElementById('pickElementBtn');
-const pickerBar            = document.getElementById('pickerBar');
-const cancelPickerBtn      = document.getElementById('cancelPickerBtn');
-const pickedPanel          = document.getElementById('pickedPanel');
-const pickedSel            = document.getElementById('pickedSel');
-const pickedLabel          = document.getElementById('pickedLabel');
-const savePickedBtn        = document.getElementById('savePickedBtn');
-const discardPickedBtn     = document.getElementById('discardPickedBtn');
 const localButtonsList     = document.getElementById('localButtonsList');
 const exportBtn            = document.getElementById('exportBtn');
 const importBtn            = document.getElementById('importBtn');
@@ -46,6 +38,7 @@ const detectedButtonsList  = document.getElementById('detectedButtonsList');
 const clickAllBtn          = document.getElementById('clickAllBtn');
 const selectorTestInput    = document.getElementById('selectorTestInput');
 const selectorTestResult   = document.getElementById('selectorTestResult');
+const siteBanner           = document.getElementById('siteBanner');
 const statusBar            = document.getElementById('statusBar');
 const candidateSection     = document.getElementById('candidateSection');
 const candidateBadge       = document.getElementById('candidateBadge');
@@ -60,6 +53,35 @@ function setStatus(msg, type = '', ms = 3000) {
   statusBar.className   = type;
   clearTimeout(statusTimer);
   if (ms > 0) statusTimer = setTimeout(() => { statusBar.textContent = ''; statusBar.className = ''; }, ms);
+}
+
+// ─── Site status banner ───────────────────────────────────────────────────────
+
+async function checkPageStatus() {
+  // Try to ping the content script on the current tab.
+  if (!currentTabId) return;
+  try {
+    await Promise.race([
+      browser.tabs.sendMessage(currentTabId, { action: 'ping' }),
+      new Promise((_, rej) => setTimeout(() => rej(new Error('timeout')), 1500)),
+    ]);
+    // Content script is alive — no banner needed.
+    siteBanner.style.display = 'none';
+  } catch (_) {
+    // Content script didn't respond. Check if we're on a known streaming domain.
+    let url = '';
+    try { url = (await browser.tabs.get(currentTabId)).url || ''; } catch (_) {}
+    const supported = sitesConfig && Object.values(sitesConfig).some(
+      s => Array.isArray(s.domains) && s.domains.some(d => url.includes(d))
+    );
+    if (supported) {
+      siteBanner.style.cssText = 'display:block;padding:8px 14px;font-size:11px;line-height:1.5;border-bottom:1px solid #1c1c1c;background:#1e1600;color:#ff9800';
+      siteBanner.textContent   = '⚠ Reload this page to activate Skipper.';
+    } else {
+      siteBanner.style.cssText = 'display:block;padding:8px 14px;font-size:11px;line-height:1.5;border-bottom:1px solid #1c1c1c;background:#1a1a1a;color:#555';
+      siteBanner.textContent   = 'Navigate to a supported streaming site (Netflix, Hulu, Disney+…) to use Skipper.';
+    }
+  }
 }
 
 // ─── Load config ──────────────────────────────────────────────────────────────
@@ -100,7 +122,7 @@ function buildSiteList(enabledSites) {
   if (!sitesConfig) return;
 
   for (const [siteId, site] of Object.entries(sitesConfig)) {
-    if (!site?.domains) continue;
+    if (!Array.isArray(site?.domains)) continue;
 
     const siteEnabled = enabledSites[siteId] !== false;
     const buttons     = siteButtonList(siteId);
@@ -187,16 +209,15 @@ async function loadSettings() {
   const stored = await browser.storage.local.get([
     'extensionEnabled', 'sites', 'debugMode',
     'customButtons', 'buttonToggles', 'pickerMode', 'lastPickedButton', 'healthData',
+    'selectorTestValue',
   ]);
 
   const extensionEnabled = stored.extensionEnabled !== false;
   const sites            = stored.sites   || {};
   const debugMode        = stored.debugMode  === true;
-  const pickerMode       = stored.pickerMode === true;
   customButtons          = stored.customButtons || {};
   buttonToggles          = stored.buttonToggles || {};
   healthData             = stored.healthData    || {};
-  const lastPicked       = stored.lastPickedButton || null;
 
   globalToggle.checked = extensionEnabled;
   debugToggle.checked  = debugMode;
@@ -204,8 +225,7 @@ async function loadSettings() {
   applyVisibility(extensionEnabled, debugMode);
   buildSiteList(sites);
 
-  if (pickerMode) pickerBar.classList.add('visible');
-  if (lastPicked && !pickerMode) showPickedPanel(lastPicked);
+  if (stored.selectorTestValue) selectorTestInput.value = stored.selectorTestValue;
 
   renderLocalButtons();
   if (extensionEnabled) refreshCandidates();
@@ -224,7 +244,7 @@ async function saveSettings() {
   await browser.storage.local.set({ extensionEnabled, sites, debugMode, customButtons, buttonToggles });
 
   applyVisibility(extensionEnabled, debugMode);
-  await broadcast({ extensionEnabled, sites, debugMode, customButtons, buttonToggles, pickerMode: false });
+  await broadcast({ extensionEnabled, sites, debugMode, customButtons, buttonToggles });
   if (debugMode) await refreshDebugPanel();
 }
 
@@ -369,23 +389,6 @@ async function promoteCandidateToLocalButton(candidate) {
   setStatus(`Added: ${candidate.label}`, 'ok');
 }
 
-// ─── Picker ───────────────────────────────────────────────────────────────────
-
-function showPickedPanel(data) {
-  pickedPanel.classList.add('visible');
-  pickedSel.textContent        = data.selector;
-  pickedLabel.value            = data.label || '';
-  pickedPanel.dataset.siteId   = data.siteId   || '';
-  pickedPanel.dataset.selector = data.selector || '';
-}
-
-function hidePickedPanel() {
-  pickedPanel.classList.remove('visible');
-  pickedLabel.value            = '';
-  pickedPanel.dataset.siteId   = '';
-  pickedPanel.dataset.selector = '';
-}
-
 // ─── Debug panel ──────────────────────────────────────────────────────────────
 
 function relativeTime(ts) {
@@ -406,8 +409,12 @@ function healthColor(ts) {
 }
 
 async function refreshDebugPanel() {
+  const timeout = new Promise((_, rej) => setTimeout(() => rej(new Error('timeout')), 3000));
   try {
-    const resp = await browser.tabs.sendMessage(currentTabId, { action: 'getDetectedButtons' });
+    const resp = await Promise.race([
+      browser.tabs.sendMessage(currentTabId, { action: 'getDetectedButtons' }),
+      timeout,
+    ]);
     renderDebugInfo(resp);
   } catch (_) {
     debugSiteInfo.innerHTML       = '<span style="color:#444">Not on a supported site.</span>';
@@ -537,48 +544,6 @@ refreshConfigBtn.addEventListener('click', async () => {
   }
 });
 
-pickElementBtn.addEventListener('click', async () => {
-  await browser.storage.local.set({ pickerMode: true, lastPickedButton: null });
-  await broadcast({ pickerMode: true });
-  // Close the popup so the user's next click on the page is a clean page click
-  // that the picker can intercept. (Browsers may consume the click that closes
-  // the popup without delivering it to the page.)
-  window.close();
-});
-
-cancelPickerBtn.addEventListener('click', async () => {
-  await browser.storage.local.set({ pickerMode: false });
-  await broadcast({ pickerMode: false });
-  pickerBar.classList.remove('visible');
-  setStatus('Picker cancelled.');
-});
-
-savePickedBtn.addEventListener('click', async () => {
-  const siteId   = pickedPanel.dataset.siteId;
-  const selector = pickedPanel.dataset.selector;
-  const label    = pickedLabel.value.trim() || 'Custom Button';
-  if (!siteId || !selector) return;
-
-  if (!customButtons[siteId]) customButtons[siteId] = [];
-  customButtons[siteId].push({ label, selector, custom: true });
-  setButtonToggle(siteId, label, true);
-
-  await browser.storage.local.set({ customButtons, buttonToggles, lastPickedButton: null });
-  await broadcast({ customButtons, buttonToggles });
-
-  hidePickedPanel();
-  renderLocalButtons();
-  const s = await browser.storage.local.get('sites');
-  buildSiteList(s.sites || {});
-  if (debugToggle.checked) await refreshDebugPanel();
-  setStatus(`Saved: ${label}`, 'ok');
-});
-
-discardPickedBtn.addEventListener('click', async () => {
-  await browser.storage.local.set({ lastPickedButton: null });
-  hidePickedPanel();
-});
-
 exportBtn.addEventListener('click', exportCustomButtons);
 importBtn.addEventListener('click', () => importFileInput.click());
 importFileInput.addEventListener('change', e => {
@@ -596,6 +561,7 @@ clickAllBtn.addEventListener('click', async () => {
 let testDebounce = null;
 selectorTestInput.addEventListener('input', () => {
   clearTimeout(testDebounce);
+  browser.storage.local.set({ selectorTestValue: selectorTestInput.value });
   testDebounce = setTimeout(async () => {
     const sel = selectorTestInput.value.trim();
     if (!sel) { selectorTestResult.textContent = ''; return; }
@@ -620,14 +586,7 @@ selectorTestInput.addEventListener('input', () => {
 scanCandidatesBtn.addEventListener('click', refreshCandidates);
 
 browser.runtime.onMessage.addListener(msg => {
-  if (msg.action === 'elementPicked') {
-    pickerBar.classList.remove('visible');
-    showPickedPanel(msg);
-    setStatus('Element captured — give it a label and save it.', 'ok', 0);
-  } else if (msg.action === 'pickerCancelled') {
-    pickerBar.classList.remove('visible');
-    setStatus('Picker cancelled.');
-  } else if (msg.action === 'candidatesUpdated') {
+  if (msg.action === 'candidatesUpdated') {
     updateCandidateBadge(msg.count);
     if (msg.count > 0) refreshCandidates();
   }
@@ -640,4 +599,5 @@ document.addEventListener('DOMContentLoaded', async () => {
   currentTabId = tabs[0]?.id ?? null;
   await loadSitesConfig();
   await loadSettings();
+  await checkPageStatus();
 });
