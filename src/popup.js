@@ -1,5 +1,12 @@
-// popup/popup.js
+/**
+ * src/popup.js — Skipper popup UI.
+ *
+ * Communicates with the content script and background service worker exclusively
+ * via browser.runtime / browser.tabs messages and browser.storage — it never
+ * touches the page DOM directly, so it does not import from core/.
+ */
 
+// Browser API polyfill
 if (typeof browser === 'undefined') {
   window.browser = chrome;
 }
@@ -101,7 +108,7 @@ function buildSiteList(enabledSites) {
     const block = document.createElement('div');
     block.className = 'site-block';
 
-    // ── Header (favicon + name + site toggle) ──────────────────────
+    // ── Header ──────────────────────────────────────────────────────────
     const header = document.createElement('div');
     header.className = 'site-header';
 
@@ -138,7 +145,7 @@ function buildSiteList(enabledSites) {
       block.classList.toggle('open');
     });
 
-    // ── Per-button list ────────────────────────────────────────────
+    // ── Per-button list ──────────────────────────────────────────────────
     const btnList = document.createElement('div');
     btnList.className = 'btn-list';
 
@@ -186,9 +193,9 @@ async function loadSettings() {
   const sites            = stored.sites   || {};
   const debugMode        = stored.debugMode  === true;
   const pickerMode       = stored.pickerMode === true;
-  customButtons          = stored.customButtons  || {};
-  buttonToggles          = stored.buttonToggles  || {};
-  healthData             = stored.healthData     || {};
+  customButtons          = stored.customButtons || {};
+  buttonToggles          = stored.buttonToggles || {};
+  healthData             = stored.healthData    || {};
   const lastPicked       = stored.lastPickedButton || null;
 
   globalToggle.checked = extensionEnabled;
@@ -221,7 +228,6 @@ async function saveSettings() {
   if (debugMode) await refreshDebugPanel();
 }
 
-/** Show/hide the three main collapsible sections. */
 function applyVisibility(extensionEnabled, debugMode) {
   siteOptions.style.display  = extensionEnabled ? 'block' : 'none';
   localSection.style.display = extensionEnabled ? 'block' : 'none';
@@ -235,12 +241,11 @@ async function broadcast(s) {
   } catch (_) {}
 }
 
-// ─── Local buttons list ───────────────────────────────────────────────────────
+// ─── Local buttons ────────────────────────────────────────────────────────────
 
 function renderLocalButtons() {
   localButtonsList.innerHTML = '';
 
-  // Collect all custom buttons across all sites
   const entries = [];
   for (const [siteId, btns] of Object.entries(customButtons)) {
     (btns || []).forEach((btn, idx) => entries.push({ siteId, btn, idx }));
@@ -258,7 +263,6 @@ function renderLocalButtons() {
     const row = document.createElement('div');
     row.className = 'local-btn-row';
 
-    // Small site favicon for quick identification
     const fav = document.createElement('img');
     fav.className = 'local-favicon';
     fav.src = siteDomain ? `https://icons.duckduckgo.com/ip3/${siteDomain}.ico` : '';
@@ -276,14 +280,11 @@ function renderLocalButtons() {
     del.className = 'del-btn';
     del.title = 'Remove';
     del.textContent = '✕';
-    del.dataset.site = siteId;
-    del.dataset.idx  = idx;
     del.addEventListener('click', async () => {
       customButtons[siteId]?.splice(idx, 1);
       await browser.storage.local.set({ customButtons });
       await broadcast({ customButtons });
       renderLocalButtons();
-      // Rebuild site list so the per-button toggle disappears too
       const s = await browser.storage.local.get('sites');
       buildSiteList(s.sites || {});
       if (debugToggle.checked) await refreshDebugPanel();
@@ -343,7 +344,6 @@ async function refreshCandidates() {
     const resp = await browser.tabs.sendMessage(currentTabId, { action: 'getCandidates' });
     renderCandidates(resp?.candidates || []);
     if (resp?.siteId) _candidateSiteId = resp.siteId;
-    // Clear the action badge now that user has the popup open
     browser.runtime.sendMessage({ action: 'clearCandidateBadge' }).catch(() => {});
   } catch (_) {
     candidateSection.style.display = 'none';
@@ -428,7 +428,6 @@ function renderDebugInfo(resp) {
   debugSiteInfo.innerHTML = `Site: <strong style="color:#ccc">${siteName || siteId}</strong>`;
   detectedButtonsList.innerHTML = '';
 
-  // Deduplicate — same button can be reported by both main frame and iframe
   const seen = new Set();
   const deduped = (detected || []).filter(b => {
     const key = `${b.selector}|${b.frameUrl}`;
@@ -442,21 +441,21 @@ function renderDebugInfo(resp) {
 
     const dot = document.createElement('span');
     dot.className = 'ind';
-    if (!btn.enabled)             dot.classList.add('ind-disabled');
-    else if (btn.custom)          dot.classList.add('ind-custom');
+    if (!btn.enabled)                  dot.classList.add('ind-disabled');
+    else if (btn.custom)               dot.classList.add('ind-custom');
     else if (btn.isIframe && btn.found) dot.classList.add('ind-iframe');
-    else if (btn.found)           dot.classList.add('ind-found');
-    else                          dot.classList.add('ind-missing');
+    else if (btn.found)                dot.classList.add('ind-found');
+    else                               dot.classList.add('ind-missing');
 
     const ts = healthData[`${siteId}__${btn.label}`] || btn.lastSeen || null;
 
     const labelEl = document.createElement('span');
     labelEl.className = 'det-label' + (btn.enabled ? '' : ' dim');
     labelEl.textContent = btn.label
-      + (!btn.enabled          ? ' (disabled)'     : '')
+      + (!btn.enabled             ? ' (disabled)'     : '')
       + (btn.enabled && !btn.found ? ' — not visible' : '')
-      + (btn.isIframe          ? ' [iframe]'        : '')
-      + (btn.custom            ? ' (local)'         : '');
+      + (btn.isIframe             ? ' [iframe]'        : '')
+      + (btn.custom               ? ' (local)'         : '');
 
     const healthEl = document.createElement('span');
     healthEl.className   = 'det-health';
@@ -532,7 +531,6 @@ refreshConfigBtn.addEventListener('click', async () => {
   }
 });
 
-// Local section: picker
 pickElementBtn.addEventListener('click', async () => {
   await browser.storage.local.set({ pickerMode: true, lastPickedButton: null });
   hidePickedPanel();
@@ -581,7 +579,6 @@ importFileInput.addEventListener('change', e => {
   importFileInput.value = '';
 });
 
-// Debug section
 clickAllBtn.addEventListener('click', async () => {
   try {
     await browser.tabs.sendMessage(currentTabId, { action: 'clickDetected' });
@@ -615,7 +612,6 @@ selectorTestInput.addEventListener('input', () => {
 
 scanCandidatesBtn.addEventListener('click', refreshCandidates);
 
-// Real-time messages from content script (picker result while popup is open)
 browser.runtime.onMessage.addListener(msg => {
   if (msg.action === 'elementPicked') {
     pickerBar.classList.remove('visible');
