@@ -48,8 +48,6 @@ const scanCandidatesBtn    = document.getElementById('scanCandidatesBtn');
 const saveToLocalWrap      = document.getElementById('saveToLocalWrap');
 const saveToLocalLabel     = document.getElementById('saveToLocalLabel');
 const saveToLocalBtn       = document.getElementById('saveToLocalBtn');
-const allSitesNotice       = document.getElementById('allSitesNotice');
-const grantAllSitesBtn     = document.getElementById('grantAllSitesBtn');
 
 // ─── Status bar ───────────────────────────────────────────────────────────────
 
@@ -630,29 +628,6 @@ saveToLocalBtn.addEventListener('click', async () => {
   setStatus(`Saved: ${label}`, 'ok');
 });
 
-async function checkAllSitesPermission() {
-  try {
-    const granted = await browser.permissions.contains({ origins: ['<all_urls>'] });
-    allSitesNotice.style.display = granted ? 'none' : 'block';
-  } catch (_) {
-    allSitesNotice.style.display = 'none';
-  }
-}
-
-grantAllSitesBtn.addEventListener('click', async () => {
-  try {
-    const granted = await browser.permissions.request({ origins: ['<all_urls>'] });
-    if (granted) {
-      allSitesNotice.style.display = 'none';
-      setStatus('All-sites access granted!', 'ok');
-    } else {
-      setStatus('Permission not granted.', 'err');
-    }
-  } catch (e) {
-    setStatus('Permission request failed.', 'err');
-  }
-});
-
 scanCandidatesBtn.addEventListener('click', refreshCandidates);
 
 browser.runtime.onMessage.addListener(msg => {
@@ -670,5 +645,4 @@ document.addEventListener('DOMContentLoaded', async () => {
   await loadSitesConfig();
   await loadSettings();
   await checkPageStatus();
-  await checkAllSitesPermission();
 });

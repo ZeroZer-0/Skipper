@@ -35,8 +35,6 @@
   var saveToLocalWrap = document.getElementById("saveToLocalWrap");
   var saveToLocalLabel = document.getElementById("saveToLocalLabel");
   var saveToLocalBtn = document.getElementById("saveToLocalBtn");
-  var allSitesNotice = document.getElementById("allSitesNotice");
-  var grantAllSitesBtn = document.getElementById("grantAllSitesBtn");
   var statusTimer = null;
   function setStatus(msg, type = "", ms = 3e3) {
     statusBar.textContent = msg;
@@ -549,27 +547,6 @@
     if (debugToggle.checked) await refreshDebugPanel();
     setStatus(`Saved: ${label}`, "ok");
   });
-  async function checkAllSitesPermission() {
-    try {
-      const granted = await browser.permissions.contains({ origins: ["<all_urls>"] });
-      allSitesNotice.style.display = granted ? "none" : "block";
-    } catch (_) {
-      allSitesNotice.style.display = "none";
-    }
-  }
-  grantAllSitesBtn.addEventListener("click", async () => {
-    try {
-      const granted = await browser.permissions.request({ origins: ["<all_urls>"] });
-      if (granted) {
-        allSitesNotice.style.display = "none";
-        setStatus("All-sites access granted!", "ok");
-      } else {
-        setStatus("Permission not granted.", "err");
-      }
-    } catch (e) {
-      setStatus("Permission request failed.", "err");
-    }
-  });
   scanCandidatesBtn.addEventListener("click", refreshCandidates);
   browser.runtime.onMessage.addListener((msg) => {
     if (msg.action === "candidatesUpdated") {
@@ -583,6 +560,5 @@
     await loadSitesConfig();
     await loadSettings();
     await checkPageStatus();
-    await checkAllSitesPermission();
   });
 })();
