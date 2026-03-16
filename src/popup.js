@@ -519,11 +519,17 @@ debugToggle.addEventListener('change',  saveSettings);
 refreshConfigBtn.addEventListener('click', async () => {
   refreshConfigBtn.classList.add('spinning');
   try {
-    await browser.runtime.sendMessage({ action: 'refreshConfig' });
+    const result = await browser.runtime.sendMessage({ action: 'refreshConfig' });
     await loadSitesConfig();
     const s = await browser.storage.local.get('sites');
     buildSiteList(s.sites || {});
-    setStatus('Config refreshed from remote.', 'ok');
+    if (result?.source === 'remote') {
+      setStatus('Config refreshed from remote.', 'ok');
+    } else if (result?.ok) {
+      setStatus('Remote unavailable — using bundled config.', 'err');
+    } else {
+      setStatus('Failed to load config.', 'err');
+    }
   } catch (_) {
     setStatus('Remote fetch failed — using bundled config.', 'err');
   } finally {
@@ -533,10 +539,11 @@ refreshConfigBtn.addEventListener('click', async () => {
 
 pickElementBtn.addEventListener('click', async () => {
   await browser.storage.local.set({ pickerMode: true, lastPickedButton: null });
-  hidePickedPanel();
-  pickerBar.classList.add('visible');
   await broadcast({ pickerMode: true });
-  setStatus('Click any element on the page to capture its selector.', '', 0);
+  // Close the popup so the user's next click on the page is a clean page click
+  // that the picker can intercept. (Browsers may consume the click that closes
+  // the popup without delivering it to the page.)
+  window.close();
 });
 
 cancelPickerBtn.addEventListener('click', async () => {

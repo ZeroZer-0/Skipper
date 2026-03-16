@@ -434,11 +434,17 @@
   refreshConfigBtn.addEventListener("click", async () => {
     refreshConfigBtn.classList.add("spinning");
     try {
-      await browser.runtime.sendMessage({ action: "refreshConfig" });
+      const result = await browser.runtime.sendMessage({ action: "refreshConfig" });
       await loadSitesConfig();
       const s = await browser.storage.local.get("sites");
       buildSiteList(s.sites || {});
-      setStatus("Config refreshed from remote.", "ok");
+      if (result?.source === "remote") {
+        setStatus("Config refreshed from remote.", "ok");
+      } else if (result?.ok) {
+        setStatus("Remote unavailable \u2014 using bundled config.", "err");
+      } else {
+        setStatus("Failed to load config.", "err");
+      }
     } catch (_) {
       setStatus("Remote fetch failed \u2014 using bundled config.", "err");
     } finally {
@@ -447,10 +453,8 @@
   });
   pickElementBtn.addEventListener("click", async () => {
     await browser.storage.local.set({ pickerMode: true, lastPickedButton: null });
-    hidePickedPanel();
-    pickerBar.classList.add("visible");
     await broadcast({ pickerMode: true });
-    setStatus("Click any element on the page to capture its selector.", "", 0);
+    window.close();
   });
   cancelPickerBtn.addEventListener("click", async () => {
     await browser.storage.local.set({ pickerMode: false });

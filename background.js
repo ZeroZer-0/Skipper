@@ -56,16 +56,17 @@ async function fetchBundled() {
  */
 async function refreshConfig() {
   const remote = await fetchRemote();
+  const source = remote ? 'remote' : 'bundled';
   const config = remote ?? (await fetchBundled());
   if (!config) return null;
 
   const store = sessionStore();
   await store.set({
     [SESSION_KEY]:            config,
-    [`${SESSION_KEY}_source`]: remote ? 'remote' : 'bundled',
+    [`${SESSION_KEY}_source`]: source,
     [`${SESSION_KEY}_ts`]:     Date.now(),
   });
-  return config;
+  return { config, source };
 }
 
 async function getCachedConfig() {
@@ -86,14 +87,14 @@ browser.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
     // If nothing is cached yet (fresh install before onInstalled fires),
     // go fetch it now.
     getCachedConfig()
-      .then(config => config ? sendResponse({ config }) : refreshConfig().then(c => sendResponse({ config: c })))
+      .then(config => config ? sendResponse({ config }) : refreshConfig().then(r => sendResponse({ config: r?.config ?? null })))
       .catch(() => sendResponse({ config: null }));
     return true; // keep channel open for async response
   }
 
   if (msg.action === 'refreshConfig') {
     refreshConfig()
-      .then(config => sendResponse({ ok: !!config }))
+      .then(result => sendResponse({ ok: !!result, source: result?.source ?? null }))
       .catch(() => sendResponse({ ok: false }));
     return true;
   }
