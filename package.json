@@ -1,0 +1,12 @@
+{
+  "name": "skipper",
+  "version": "4.0.0",
+  "private": true,
+  "scripts": {
+    "build": "esbuild src/content-script.js --bundle --format=iife --target=es2020 --outfile=dist/content-script.js && esbuild src/popup.js --bundle --format=iife --target=es2020 --outfile=dist/popup.js",
+    "watch": "esbuild src/content-script.js --bundle --format=iife --target=es2020 --outfile=dist/content-script.js --watch & esbuild src/popup.js --bundle --format=iife --target=es2020 --outfile=dist/popup.js --watch"
+  },
+  "devDependencies": {
+    "esbuild": "^0.25.0"
+  }
+}
