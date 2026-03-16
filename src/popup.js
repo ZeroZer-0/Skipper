@@ -19,6 +19,7 @@ let buttonToggles    = {};     // { siteId: { label: boolean } }
 let healthData       = {};     // { "siteId__label": timestamp }
 let currentTabId     = null;
 let _candidateSiteId = null;  // siteId returned from last getCandidates response
+let _debugSiteId     = null;  // siteId returned from last getDetectedButtons response
 
 // ─── Element refs ─────────────────────────────────────────────────────────────
 
@@ -44,6 +45,11 @@ const candidateSection     = document.getElementById('candidateSection');
 const candidateBadge       = document.getElementById('candidateBadge');
 const candidateList        = document.getElementById('candidateList');
 const scanCandidatesBtn    = document.getElementById('scanCandidatesBtn');
+const saveToLocalWrap      = document.getElementById('saveToLocalWrap');
+const saveToLocalLabel     = document.getElementById('saveToLocalLabel');
+const saveToLocalBtn       = document.getElementById('saveToLocalBtn');
+const allSitesNotice       = document.getElementById('allSitesNotice');
+const grantAllSitesBtn     = document.getElementById('grantAllSitesBtn');
 
 // ─── Status bar ───────────────────────────────────────────────────────────────
 
@@ -425,6 +431,7 @@ async function refreshDebugPanel() {
 
 function renderDebugInfo(resp) {
   if (!resp?.siteId) {
+    _debugSiteId = null;
     debugSiteInfo.innerHTML       = '<span style="color:#444">Not on a supported site.</span>';
     detectedButtonsList.innerHTML = '';
     clickAllBtn.style.display     = 'none';
@@ -432,6 +439,7 @@ function renderDebugInfo(resp) {
   }
 
   const { siteId, siteName, detected } = resp;
+  _debugSiteId = siteId;
   debugSiteInfo.innerHTML = `Site: <strong style="color:#ccc">${siteName || siteId}</strong>`;
   detectedButtonsList.innerHTML = '';
 
@@ -562,6 +570,7 @@ let testDebounce = null;
 selectorTestInput.addEventListener('input', () => {
   clearTimeout(testDebounce);
   browser.storage.local.set({ selectorTestValue: selectorTestInput.value });
+  saveToLocalWrap.style.display = 'none';
   testDebounce = setTimeout(async () => {
     const sel = selectorTestInput.value.trim();
     if (!sel) { selectorTestResult.textContent = ''; return; }
@@ -570,17 +579,78 @@ selectorTestInput.addEventListener('input', () => {
       if (resp.error) {
         selectorTestResult.style.color = '#f44336';
         selectorTestResult.textContent = `Error: ${resp.error}`;
+        saveToLocalWrap.style.display = 'none';
       } else {
         selectorTestResult.style.color = resp.count > 0 ? '#4caf50' : '#555';
         selectorTestResult.textContent = resp.count > 0
           ? `Found ${resp.count} element(s)${resp.shadowHit ? ' (shadow DOM)' : ''}${resp.inIframe ? ' (in iframe)' : ''}`
           : 'No elements matched';
+        saveToLocalWrap.style.display = resp.count > 0 ? 'block' : 'none';
       }
     } catch (_) {
       selectorTestResult.style.color = '#444';
       selectorTestResult.textContent = 'Not on a supported page.';
+      saveToLocalWrap.style.display = 'none';
     }
   }, 300);
+});
+
+saveToLocalBtn.addEventListener('click', async () => {
+  const sel   = selectorTestInput.value.trim();
+  const label = saveToLocalLabel.value.trim();
+  if (!label) { setStatus('Enter a label first.', 'err'); saveToLocalLabel.focus(); return; }
+  if (!sel)   { setStatus('No selector to save.', 'err'); return; }
+
+  // Use the detected siteId, or fall back to the current tab's hostname.
+  let siteId = _debugSiteId;
+  if (!siteId) {
+    try {
+      const tab = await browser.tabs.get(currentTabId);
+      siteId = new URL(tab.url).hostname;
+    } catch (_) { setStatus('Could not determine current site.', 'err'); return; }
+  }
+
+  if (!customButtons[siteId]) customButtons[siteId] = [];
+  // Avoid duplicates.
+  if (customButtons[siteId].some(b => b.selector === sel)) {
+    setStatus('Selector already saved.', 'err'); return;
+  }
+  customButtons[siteId].push({ label, selector: sel, custom: true });
+  setButtonToggle(siteId, label, true);
+
+  await browser.storage.local.set({ customButtons, buttonToggles });
+  await broadcast({ customButtons, buttonToggles });
+
+  saveToLocalLabel.value = '';
+  saveToLocalWrap.style.display = 'none';
+  renderLocalButtons();
+  const s = await browser.storage.local.get('sites');
+  buildSiteList(s.sites || {});
+  if (debugToggle.checked) await refreshDebugPanel();
+  setStatus(`Saved: ${label}`, 'ok');
+});
+
+async function checkAllSitesPermission() {
+  try {
+    const granted = await browser.permissions.contains({ origins: ['<all_urls>'] });
+    allSitesNotice.style.display = granted ? 'none' : 'block';
+  } catch (_) {
+    allSitesNotice.style.display = 'none';
+  }
+}
+
+grantAllSitesBtn.addEventListener('click', async () => {
+  try {
+    const granted = await browser.permissions.request({ origins: ['<all_urls>'] });
+    if (granted) {
+      allSitesNotice.style.display = 'none';
+      setStatus('All-sites access granted!', 'ok');
+    } else {
+      setStatus('Permission not granted.', 'err');
+    }
+  } catch (e) {
+    setStatus('Permission request failed.', 'err');
+  }
 });
 
 scanCandidatesBtn.addEventListener('click', refreshCandidates);
@@ -600,4 +670,5 @@ document.addEventListener('DOMContentLoaded', async () => {
   await loadSitesConfig();
   await loadSettings();
   await checkPageStatus();
+  await checkAllSitesPermission();
 });

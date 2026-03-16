@@ -527,8 +527,8 @@
         }));
         const crossFrameDetected = [];
         if (IS_TOP_FRAME) {
-          frameDetections.forEach(({ siteId, detected }, frameUrl) => {
-            if (siteId === currentSiteId) {
+          frameDetections.forEach(({ siteId: siteId2, detected }, frameUrl) => {
+            if (siteId2 === currentSiteId) {
               detected.forEach((btn) => crossFrameDetected.push({ ...btn, frameUrl, isIframe: true }));
             }
           });
@@ -621,18 +621,26 @@
         return;
       }
       const match = detectSite();
-      if (!match) {
-        log(`No site match for: ${window.location.hostname}` + (!IS_TOP_FRAME ? ` (iframe, top: ${getTopHostname()})` : ""));
-        return;
+      if (match) {
+        const [siteId2, site] = match;
+        const enabledSites = stored.sites || {};
+        if (enabledSites[siteId2] === false) {
+          log(`${siteId2} disabled by user`);
+          return;
+        }
+        currentSiteId = siteId2;
+        currentSite = site;
+      } else {
+        const hostname = window.location.hostname;
+        const hostCustom = customButtons[hostname];
+        if (!hostCustom || hostCustom.length === 0) {
+          log(`No site match for: ${hostname}` + (!IS_TOP_FRAME ? ` (iframe, top: ${getTopHostname()})` : ""));
+          return;
+        }
+        currentSiteId = hostname;
+        currentSite = null;
+        log(`Custom-only activation on: ${hostname}`);
       }
-      const [siteId, site] = match;
-      const enabledSites = stored.sites || {};
-      if (enabledSites[siteId] === false) {
-        log(`${siteId} disabled by user`);
-        return;
-      }
-      currentSiteId = siteId;
-      currentSite = site;
       log(`Active on "${siteId}" \u2014 ${IS_TOP_FRAME ? "main frame" : "iframe @ " + window.location.hostname}`);
       applySettings();
     } catch (err) {

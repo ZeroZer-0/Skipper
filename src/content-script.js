@@ -488,20 +488,29 @@ async function init() {
 
     if (!settings.extensionEnabled) { log('Extension disabled'); return; }
 
-    // 3. Detect site.
+    // 3. Detect site — first try the built-in sites.json config, then fall back
+    //    to custom buttons stored under the current hostname (so local buttons
+    //    work on sites not listed in sites.json once <all_urls> is granted).
     const match = detectSite();
-    if (!match) {
-      log(`No site match for: ${window.location.hostname}` +
-          (!IS_TOP_FRAME ? ` (iframe, top: ${getTopHostname()})` : ''));
-      return;
+    if (match) {
+      const [siteId, site] = match;
+      const enabledSites   = stored.sites || {};
+      if (enabledSites[siteId] === false) { log(`${siteId} disabled by user`); return; }
+      currentSiteId = siteId;
+      currentSite   = site;
+    } else {
+      const hostname = window.location.hostname;
+      const hostCustom = customButtons[hostname];
+      if (!hostCustom || hostCustom.length === 0) {
+        log(`No site match for: ${hostname}` +
+            (!IS_TOP_FRAME ? ` (iframe, top: ${getTopHostname()})` : ''));
+        return;
+      }
+      // Activate with only the locally-saved buttons for this hostname.
+      currentSiteId = hostname;
+      currentSite   = null;
+      log(`Custom-only activation on: ${hostname}`);
     }
-
-    const [siteId, site] = match;
-    const enabledSites   = stored.sites || {};
-    if (enabledSites[siteId] === false) { log(`${siteId} disabled by user`); return; }
-
-    currentSiteId = siteId;
-    currentSite   = site;
 
     log(`Active on "${siteId}" — ${IS_TOP_FRAME ? 'main frame' : 'iframe @ ' + window.location.hostname}`);
     applySettings();
