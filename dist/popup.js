@@ -230,7 +230,7 @@
       (btns || []).forEach((btn, idx) => entries.push({ siteId, btn, idx }));
     }
     if (entries.length === 0) {
-      localButtonsList.innerHTML = '<div class="local-empty">No local buttons yet \u2014 use the picker above to add some.</div>';
+      localButtonsList.innerHTML = '<div class="local-empty">No local buttons yet \u2014 enable Debug Mode, paste a selector into the test box, then save it.</div>';
       return;
     }
     entries.forEach(({ siteId, btn, idx }) => {
@@ -494,7 +494,14 @@
         const resp = await browser.tabs.sendMessage(currentTabId, { action: "testSelector", selector: sel });
         if (resp.error) {
           selectorTestResult.style.color = "#f44336";
-          selectorTestResult.textContent = `Error: ${resp.error}`;
+          const wrapped = `[${sel}]`;
+          let suggestion = "";
+          try {
+            document.querySelector(wrapped);
+            suggestion = wrapped;
+          } catch (_) {
+          }
+          selectorTestResult.textContent = suggestion ? `Invalid selector \u2014 did you mean: ${suggestion}` : 'Invalid selector \u2014 use CSS syntax e.g. [attr="val"], .class, button';
           saveToLocalWrap.style.display = "none";
         } else {
           selectorTestResult.style.color = resp.count > 0 ? "#4caf50" : "#555";

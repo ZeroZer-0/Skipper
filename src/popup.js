@@ -276,7 +276,7 @@ function renderLocalButtons() {
   }
 
   if (entries.length === 0) {
-    localButtonsList.innerHTML = '<div class="local-empty">No local buttons yet — use the picker above to add some.</div>';
+    localButtonsList.innerHTML = '<div class="local-empty">No local buttons yet — enable Debug Mode, paste a selector into the test box, then save it.</div>';
     return;
   }
 
@@ -576,7 +576,13 @@ selectorTestInput.addEventListener('input', () => {
       const resp = await browser.tabs.sendMessage(currentTabId, { action: 'testSelector', selector: sel });
       if (resp.error) {
         selectorTestResult.style.color = '#f44336';
-        selectorTestResult.textContent = `Error: ${resp.error}`;
+        // Try wrapping in [] — catches bare attribute strings like data-testid="skip"
+        const wrapped = `[${sel}]`;
+        let suggestion = '';
+        try { document.querySelector(wrapped); suggestion = wrapped; } catch (_) {}
+        selectorTestResult.textContent = suggestion
+          ? `Invalid selector — did you mean: ${suggestion}`
+          : 'Invalid selector — use CSS syntax e.g. [attr="val"], .class, button';
         saveToLocalWrap.style.display = 'none';
       } else {
         selectorTestResult.style.color = resp.count > 0 ? '#4caf50' : '#555';
