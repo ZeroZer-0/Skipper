@@ -1,18 +1,42 @@
-Automatically skips intros, recaps, and moves to the next episode on supported streaming sites.
-Current Supported Sites:
-Netflix.com
-Disneyplus.com
-Hulu.com
-Paramountplus.com
-Crunchyroll.com
-Amazon.com
-Primevideo.com
+# Skipper
 
-Uses Manifest V3
+Automatically skips intros, recaps, and next episode prompts on supported streaming sites.
 
-If you have any site or button recommendations please say so in a review!
-*I do not actively use Hulu Paramount or Prime video (Non US version of Amazon) because of this these sites may take longer to fix unless reviews are made
-**I do not actively use chrome I do preform tests to make sure they work on release but as I use Firefox it will take longer for bugs to be found unless reviews are made.
+## Supported Sites
+If you find any site listed isnt working, please leave a review on your browser's store or open an issue on this repo.
+| Site | Skip Intro | Skip Recap | Next Episode |
+|------|:----------:|:----------:|:------------:|
+| Netflix | ✓ | ✓ | ✓ |
+| Disney+ | ✓ | ✓ | ✓ |
+| Hulu | ✓ | ✓ | ✓ |
+| Amazon / Prime Video | ✓ | | ✓ |
+| Max | ✓ | ✓ | ✓ |
+| Crunchyroll | ✓ | ✓ | ✓ |
+| Paramount+ | ✓ | | ✓ |
+| Peacock | ✓ | | ✓ |
+| Apple TV+ | ✓ | | ✓ |
+| Tubi | ✓ | | ✓ |
 
+## Features
 
-After version 2.0.1 this project became a testbed for using claude code to help make the project because of this some aspcects of how I do prs. merges, and commits will not align with common best practices as I get used to using a majority AI code writer.
+- Per-site and per-button enable/disable toggles
+- Custom button support — add your own CSS selectors for unsupported sites
+- Export/import custom button configurations as JSON
+- Debug mode with live button highlighting and selector tester
+- Health tracking shows when each button was last successfully clicked
+
+## Browser Support
+
+- **Chrome** — Manifest V3
+- **Firefox** — Manifest V3
+
+## Building
+
+```bash
+npm install
+
+# Chrome
+npm run pack:chrome
+
+# Firefox
+npm run pack:firefox
