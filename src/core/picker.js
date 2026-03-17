@@ -80,11 +80,15 @@ function showToast(selector) {
     max-width:320px;word-break:break-all;line-height:1.5;
     box-shadow:0 4px 24px rgba(0,0,0,.6);
   `;
-  el.innerHTML = `
-    <strong>Element captured!</strong><br>
-    <span style="color:#aaa;font-size:11px;font-family:monospace">${selector}</span><br>
-    <span style="color:#777;font-size:11px">${_hint}</span>
-  `;
+  const strong = document.createElement('strong');
+  strong.textContent = 'Element captured!';
+  const selSpan = document.createElement('span');
+  selSpan.style.cssText = 'color:#aaa;font-size:11px;font-family:monospace';
+  selSpan.textContent = selector;
+  const hintSpan = document.createElement('span');
+  hintSpan.style.cssText = 'color:#777;font-size:11px';
+  hintSpan.textContent = _hint;
+  el.append(strong, document.createElement('br'), selSpan, document.createElement('br'), hintSpan);
   document.body.appendChild(el);
   setTimeout(() => el.remove(), 5_000);
 }

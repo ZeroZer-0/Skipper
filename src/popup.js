@@ -151,8 +151,13 @@ function buildSiteList(enabledSites) {
 
     const info = document.createElement('div');
     info.className = 'site-info';
-    info.innerHTML = `<div class="site-name">${site.name}</div>
-                      <div class="site-domain">${site.domains.join(', ')}</div>`;
+    const nameDiv = document.createElement('div');
+    nameDiv.className = 'site-name';
+    nameDiv.textContent = site.name;
+    const domainDiv = document.createElement('div');
+    domainDiv.className = 'site-domain';
+    domainDiv.textContent = site.domains.join(', ');
+    info.append(nameDiv, domainDiv);
 
     const siteSwitch = document.createElement('label');
     siteSwitch.className = 'switch';
@@ -294,11 +299,16 @@ function renderLocalButtons() {
 
     const info = document.createElement('div');
     info.className = 'local-btn-info';
-    info.innerHTML = `
-      <div class="local-btn-name">${btn.label}</div>
-      <div class="local-btn-meta">${siteName}</div>
-      <div class="local-btn-sel">${btn.selector}</div>
-    `;
+    const lNameDiv = document.createElement('div');
+    lNameDiv.className = 'local-btn-name';
+    lNameDiv.textContent = btn.label;
+    const lMetaDiv = document.createElement('div');
+    lMetaDiv.className = 'local-btn-meta';
+    lMetaDiv.textContent = siteName;
+    const lSelDiv = document.createElement('div');
+    lSelDiv.className = 'local-btn-sel';
+    lSelDiv.textContent = btn.selector;
+    info.append(lNameDiv, lMetaDiv, lSelDiv);
 
     const del = document.createElement('button');
     del.className = 'del-btn';
@@ -348,8 +358,13 @@ function renderCandidates(candidates) {
 
     const info = document.createElement('div');
     info.className = 'candidate-info';
-    info.innerHTML = `<div class="candidate-name">${c.label}</div>
-                      <div class="candidate-sel">${c.selector}</div>`;
+    const cNameDiv = document.createElement('div');
+    cNameDiv.className = 'candidate-name';
+    cNameDiv.textContent = c.label;
+    const cSelDiv = document.createElement('div');
+    cSelDiv.className = 'candidate-sel';
+    cSelDiv.textContent = c.selector;
+    info.append(cNameDiv, cSelDiv);
 
     const addBtn = document.createElement('button');
     addBtn.className   = 'add-candidate-btn';
@@ -438,7 +453,11 @@ function renderDebugInfo(resp) {
 
   const { siteId, siteName, detected } = resp;
   _debugSiteId = siteId;
-  debugSiteInfo.innerHTML = `Site: <strong style="color:#ccc">${siteName || siteId}</strong>`;
+  debugSiteInfo.textContent = 'Site: ';
+  const siteStrong = document.createElement('strong');
+  siteStrong.style.color = '#ccc';
+  siteStrong.textContent = siteName || siteId;
+  debugSiteInfo.appendChild(siteStrong);
   detectedButtonsList.innerHTML = '';
 
   const seen = new Set();
