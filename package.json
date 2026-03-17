@@ -4,7 +4,9 @@
   "private": true,
   "scripts": {
     "build": "esbuild src/content-script.js --bundle --format=iife --target=es2020 --outfile=dist/content-script.js && esbuild src/popup.js --bundle --format=iife --target=es2020 --outfile=dist/popup.js",
-    "watch": "esbuild src/content-script.js --bundle --format=iife --target=es2020 --outfile=dist/content-script.js --watch & esbuild src/popup.js --bundle --format=iife --target=es2020 --outfile=dist/popup.js --watch"
+    "watch": "esbuild src/content-script.js --bundle --format=iife --target=es2020 --outfile=dist/content-script.js --watch & esbuild src/popup.js --bundle --format=iife --target=es2020 --outfile=dist/popup.js --watch",
+    "pack:chrome": "npm run build && zip -r skipper-4.0.0-chrome.zip manifest.json background.js sites.json dist/ popup/ icons/",
+    "pack:firefox": "npm run build && cp manifest.firefox.json manifest.json.bak && cp manifest.firefox.json manifest.json && zip -r skipper-4.0.0-firefox.zip manifest.json background.js sites.json dist/ popup/ icons/ && mv manifest.json.bak manifest.json"
   },
   "devDependencies": {
     "esbuild": "^0.25.0"
