@@ -184,8 +184,6 @@
       "debugMode",
       "customButtons",
       "buttonToggles",
-      "pickerMode",
-      "lastPickedButton",
       "healthData",
       "selectorTestValue"
     ]);

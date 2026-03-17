@@ -217,7 +217,7 @@ function buildSiteList(enabledSites) {
 async function loadSettings() {
   const stored = await browser.storage.local.get([
     'extensionEnabled', 'sites', 'debugMode',
-    'customButtons', 'buttonToggles', 'pickerMode', 'lastPickedButton', 'healthData',
+    'customButtons', 'buttonToggles', 'healthData',
     'selectorTestValue',
   ]);
 

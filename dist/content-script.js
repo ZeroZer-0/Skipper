@@ -67,90 +67,6 @@
     return el.tagName.toLowerCase();
   }
 
-  // src/core/picker.js
-  var pickerActive = false;
-  var pickerHovered = null;
-  var _onPick = null;
-  var _onCancel = null;
-  var _hint = "";
-  function onMouseover(e) {
-    e.stopPropagation();
-    if (pickerHovered && pickerHovered !== e.target) clearHover();
-    pickerHovered = e.target;
-    pickerHovered.style.outline = "2px dashed #ff6d00";
-    pickerHovered.style.outlineOffset = "2px";
-    pickerHovered.style.cursor = "crosshair";
-  }
-  function clearHover() {
-    if (!pickerHovered) return;
-    pickerHovered.style.removeProperty("outline");
-    pickerHovered.style.removeProperty("outline-offset");
-    pickerHovered.style.removeProperty("cursor");
-    pickerHovered = null;
-  }
-  function onMouseout(e) {
-    if (pickerHovered === e.target) clearHover();
-  }
-  function onClick(e) {
-    e.preventDefault();
-    e.stopPropagation();
-    const el = e.target;
-    const selector = generateSelector(el);
-    const label = (el.textContent || "").trim().substring(0, 60) || el.getAttribute("aria-label") || el.tagName.toLowerCase();
-    deactivatePicker();
-    showToast(selector);
-    _onPick?.({ el, selector, label });
-  }
-  function onKeydown(e) {
-    if (e.key === "Escape") {
-      deactivatePicker();
-      _onCancel?.();
-    }
-  }
-  function showToast(selector) {
-    const el = document.createElement("div");
-    el.style.cssText = `
-    position:fixed;top:16px;right:16px;z-index:2147483647;
-    background:#121212;color:#4caf50;border:2px solid #4caf50;border-radius:8px;
-    padding:10px 14px;font-family:system-ui,sans-serif;font-size:13px;
-    max-width:320px;word-break:break-all;line-height:1.5;
-    box-shadow:0 4px 24px rgba(0,0,0,.6);
-  `;
-    const strong = document.createElement("strong");
-    strong.textContent = "Element captured!";
-    const selSpan = document.createElement("span");
-    selSpan.style.cssText = "color:#aaa;font-size:11px;font-family:monospace";
-    selSpan.textContent = selector;
-    const hintSpan = document.createElement("span");
-    hintSpan.style.cssText = "color:#777;font-size:11px";
-    hintSpan.textContent = _hint;
-    el.append(strong, document.createElement("br"), selSpan, document.createElement("br"), hintSpan);
-    document.body.appendChild(el);
-    setTimeout(() => el.remove(), 5e3);
-  }
-  function activatePicker({ onPick, onCancel, hint = "Open the extension to save it." } = {}) {
-    if (pickerActive) return;
-    pickerActive = true;
-    _onPick = onPick;
-    _onCancel = onCancel;
-    _hint = hint;
-    document.addEventListener("mouseover", onMouseover, true);
-    document.addEventListener("mouseout", onMouseout, true);
-    document.addEventListener("click", onClick, true);
-    document.addEventListener("keydown", onKeydown, true);
-  }
-  function deactivatePicker() {
-    if (!pickerActive) return;
-    pickerActive = false;
-    clearHover();
-    document.removeEventListener("mouseover", onMouseover, true);
-    document.removeEventListener("mouseout", onMouseout, true);
-    document.removeEventListener("click", onClick, true);
-    document.removeEventListener("keydown", onKeydown, true);
-    _onPick = null;
-    _onCancel = null;
-  }
-
   // src/core/candidates.js
   var MIN_CANDIDATE_SCORE = 40;
   var HIGH_CANDIDATE_SCORE = 60;
@@ -234,8 +150,7 @@
   var buttonToggles = {};
   var settings = {
     extensionEnabled: true,
-    debugMode: false,
-    pickerMode: false
+    debugMode: false
   };
   var healthCache = {};
   var healthDirty = false;
@@ -412,7 +327,6 @@
   }
   function runCheck() {
     if (!currentSiteId || !settings.extensionEnabled) return;
-    if (settings.pickerMode) return;
     if (settings.debugMode) applyHighlights();
     else runClicks();
     if (candidateWatchEnabled) runCandidateScan();
@@ -461,38 +375,11 @@
     if (!settings.extensionEnabled || !currentSiteId) {
       stopObserving();
       clearHighlights();
-      deactivatePicker();
       return;
     }
-    if (settings.pickerMode) {
-      stopObserving();
-      activatePicker({
-        hint: "Open Skipper to label and save it.",
-        onPick: ({ selector, label }) => {
-          const result = {
-            action: "elementPicked",
-            selector,
-            label,
-            siteId: currentSiteId,
-            isIframe: !IS_TOP_FRAME,
-            frameUrl: window.location.href
-          };
-          browser.storage.local.set({ pickerMode: false, lastPickedButton: result });
-          browser.runtime.sendMessage(result).catch(() => {
-          });
-        },
-        onCancel: () => {
-          browser.storage.local.set({ pickerMode: false });
-          browser.runtime.sendMessage({ action: "pickerCancelled" }).catch(() => {
-          });
-        }
-      });
-    } else {
-      deactivatePicker();
-      clearHighlights();
-      startObserving();
-      candidateWatchEnabled = true;
-    }
+    clearHighlights();
+    startObserving();
+    candidateWatchEnabled = true;
   }
   browser.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
     switch (msg.action) {
@@ -500,15 +387,6 @@
         if (msg.settings.customButtons !== void 0) customButtons = msg.settings.customButtons;
         if (msg.settings.buttonToggles !== void 0) buttonToggles = msg.settings.buttonToggles;
         Object.assign(settings, msg.settings);
-        applySettings();
-        break;
-      case "activatePicker":
-        settings.pickerMode = true;
-        applySettings();
-        break;
-      case "deactivatePicker":
-        settings.pickerMode = false;
-        deactivatePicker();
         applySettings();
         break;
       case "clickDetected":
@@ -611,12 +489,10 @@
         "debugMode",
         "customButtons",
         "buttonToggles",
-        "pickerMode",
         "healthData"
       ]);
       settings.extensionEnabled = stored.extensionEnabled !== false;
       settings.debugMode = stored.debugMode === true;
-      settings.pickerMode = stored.pickerMode === true;
       customButtons = stored.customButtons || {};
       buttonToggles = stored.buttonToggles || {};
       healthCache = stored.healthData || {};
