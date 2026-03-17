@@ -9,6 +9,7 @@
   var healthData = {};
   var currentTabId = null;
   var _candidateSiteId = null;
+  var _debugSiteId = null;
   var globalToggle = document.getElementById("globalToggle");
   var debugToggle = document.getElementById("debugToggle");
   var refreshConfigBtn = document.getElementById("refreshConfigBtn");
@@ -31,6 +32,9 @@
   var candidateBadge = document.getElementById("candidateBadge");
   var candidateList = document.getElementById("candidateList");
   var scanCandidatesBtn = document.getElementById("scanCandidatesBtn");
+  var saveToLocalWrap = document.getElementById("saveToLocalWrap");
+  var saveToLocalLabel = document.getElementById("saveToLocalLabel");
+  var saveToLocalBtn = document.getElementById("saveToLocalBtn");
   var statusTimer = null;
   function setStatus(msg, type = "", ms = 3e3) {
     statusBar.textContent = msg;
@@ -119,8 +123,13 @@
       };
       const info = document.createElement("div");
       info.className = "site-info";
-      info.innerHTML = `<div class="site-name">${site.name}</div>
-                      <div class="site-domain">${site.domains.join(", ")}</div>`;
+      const nameDiv = document.createElement("div");
+      nameDiv.className = "site-name";
+      nameDiv.textContent = site.name;
+      const domainDiv = document.createElement("div");
+      domainDiv.className = "site-domain";
+      domainDiv.textContent = site.domains.join(", ");
+      info.append(nameDiv, domainDiv);
       const siteSwitch = document.createElement("label");
       siteSwitch.className = "switch";
       const siteCb = document.createElement("input");
@@ -175,8 +184,6 @@
       "debugMode",
       "customButtons",
       "buttonToggles",
-      "pickerMode",
-      "lastPickedButton",
       "healthData",
       "selectorTestValue"
     ]);
@@ -226,7 +233,7 @@
       (btns || []).forEach((btn, idx) => entries.push({ siteId, btn, idx }));
     }
     if (entries.length === 0) {
-      localButtonsList.innerHTML = '<div class="local-empty">No local buttons yet \u2014 use the picker above to add some.</div>';
+      localButtonsList.innerHTML = '<div class="local-empty">No local buttons yet \u2014 enable Debug Mode, paste a selector into the test box, then save it.</div>';
       return;
     }
     entries.forEach(({ siteId, btn, idx }) => {
@@ -242,11 +249,16 @@
       };
       const info = document.createElement("div");
       info.className = "local-btn-info";
-      info.innerHTML = `
-      <div class="local-btn-name">${btn.label}</div>
-      <div class="local-btn-meta">${siteName}</div>
-      <div class="local-btn-sel">${btn.selector}</div>
-    `;
+      const lNameDiv = document.createElement("div");
+      lNameDiv.className = "local-btn-name";
+      lNameDiv.textContent = btn.label;
+      const lMetaDiv = document.createElement("div");
+      lMetaDiv.className = "local-btn-meta";
+      lMetaDiv.textContent = siteName;
+      const lSelDiv = document.createElement("div");
+      lSelDiv.className = "local-btn-sel";
+      lSelDiv.textContent = btn.selector;
+      info.append(lNameDiv, lMetaDiv, lSelDiv);
       const del = document.createElement("button");
       del.className = "del-btn";
       del.title = "Remove";
@@ -287,8 +299,13 @@
       scoreEl.textContent = c.scoreLabel;
       const info = document.createElement("div");
       info.className = "candidate-info";
-      info.innerHTML = `<div class="candidate-name">${c.label}</div>
-                      <div class="candidate-sel">${c.selector}</div>`;
+      const cNameDiv = document.createElement("div");
+      cNameDiv.className = "candidate-name";
+      cNameDiv.textContent = c.label;
+      const cSelDiv = document.createElement("div");
+      cSelDiv.className = "candidate-sel";
+      cSelDiv.textContent = c.selector;
+      info.append(cNameDiv, cSelDiv);
       const addBtn = document.createElement("button");
       addBtn.className = "add-candidate-btn";
       addBtn.textContent = "Add";
@@ -358,13 +375,19 @@
   }
   function renderDebugInfo(resp) {
     if (!resp?.siteId) {
+      _debugSiteId = null;
       debugSiteInfo.innerHTML = '<span style="color:#444">Not on a supported site.</span>';
       detectedButtonsList.innerHTML = "";
       clickAllBtn.style.display = "none";
       return;
     }
     const { siteId, siteName, detected } = resp;
-    debugSiteInfo.innerHTML = `Site: <strong style="color:#ccc">${siteName || siteId}</strong>`;
+    _debugSiteId = siteId;
+    debugSiteInfo.textContent = "Site: ";
+    const siteStrong = document.createElement("strong");
+    siteStrong.style.color = "#ccc";
+    siteStrong.textContent = siteName || siteId;
+    debugSiteInfo.appendChild(siteStrong);
     detectedButtonsList.innerHTML = "";
     const seen = /* @__PURE__ */ new Set();
     const deduped = (detected || []).filter((b) => {
@@ -477,6 +500,7 @@
   selectorTestInput.addEventListener("input", () => {
     clearTimeout(testDebounce);
     browser.storage.local.set({ selectorTestValue: selectorTestInput.value });
+    saveToLocalWrap.style.display = "none";
     testDebounce = setTimeout(async () => {
       const sel = selectorTestInput.value.trim();
       if (!sel) {
@@ -487,16 +511,65 @@
         const resp = await browser.tabs.sendMessage(currentTabId, { action: "testSelector", selector: sel });
         if (resp.error) {
           selectorTestResult.style.color = "#f44336";
-          selectorTestResult.textContent = `Error: ${resp.error}`;
+          const wrapped = `[${sel}]`;
+          let suggestion = "";
+          try {
+            document.querySelector(wrapped);
+            suggestion = wrapped;
+          } catch (_) {
+          }
+          selectorTestResult.textContent = suggestion ? `Invalid selector \u2014 did you mean: ${suggestion}` : 'Invalid selector \u2014 use CSS syntax e.g. [attr="val"], .class, button';
+          saveToLocalWrap.style.display = "none";
         } else {
           selectorTestResult.style.color = resp.count > 0 ? "#4caf50" : "#555";
           selectorTestResult.textContent = resp.count > 0 ? `Found ${resp.count} element(s)${resp.shadowHit ? " (shadow DOM)" : ""}${resp.inIframe ? " (in iframe)" : ""}` : "No elements matched";
+          saveToLocalWrap.style.display = resp.count > 0 ? "block" : "none";
         }
       } catch (_) {
         selectorTestResult.style.color = "#444";
         selectorTestResult.textContent = "Not on a supported page.";
+        saveToLocalWrap.style.display = "none";
       }
     }, 300);
+  });
+  saveToLocalBtn.addEventListener("click", async () => {
+    const sel = selectorTestInput.value.trim();
+    const label = saveToLocalLabel.value.trim();
+    if (!label) {
+      setStatus("Enter a label first.", "err");
+      saveToLocalLabel.focus();
+      return;
+    }
+    if (!sel) {
+      setStatus("No selector to save.", "err");
+      return;
+    }
+    let siteId = _debugSiteId;
+    if (!siteId) {
+      try {
+        const tab = await browser.tabs.get(currentTabId);
+        siteId = new URL(tab.url).hostname;
+      } catch (_) {
+        setStatus("Could not determine current site.", "err");
+        return;
+      }
+    }
+    if (!customButtons[siteId]) customButtons[siteId] = [];
+    if (customButtons[siteId].some((b) => b.selector === sel)) {
+      setStatus("Selector already saved.", "err");
+      return;
+    }
+    customButtons[siteId].push({ label, selector: sel, custom: true });
+    setButtonToggle(siteId, label, true);
+    await browser.storage.local.set({ customButtons, buttonToggles });
+    await broadcast({ customButtons, buttonToggles });
+    saveToLocalLabel.value = "";
+    saveToLocalWrap.style.display = "none";
+    renderLocalButtons();
+    const s = await browser.storage.local.get("sites");
+    buildSiteList(s.sites || {});
+    if (debugToggle.checked) await refreshDebugPanel();
+    setStatus(`Saved: ${label}`, "ok");
   });
   scanCandidatesBtn.addEventListener("click", refreshCandidates);
   browser.runtime.onMessage.addListener((msg) => {

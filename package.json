@@ -3,10 +3,13 @@
   "version": "4.0.0",
   "private": true,
   "scripts": {
-    "build": "esbuild src/content-script.js --bundle --format=iife --target=es2020 --outfile=dist/content-script.js && esbuild src/popup.js --bundle --format=iife --target=es2020 --outfile=dist/popup.js",
-    "watch": "esbuild src/content-script.js --bundle --format=iife --target=es2020 --outfile=dist/content-script.js --watch & esbuild src/popup.js --bundle --format=iife --target=es2020 --outfile=dist/popup.js --watch"
+    "build": "npx esbuild src/content-script.js --bundle --format=iife --target=es2020 --outfile=dist/content-script.js && npx esbuild src/popup.js --bundle --format=iife --target=es2020 --outfile=dist/popup.js",
+    "watch": "npx esbuild src/content-script.js --bundle --format=iife --target=es2020 --outfile=dist/content-script.js --watch & npx esbuild src/popup.js --bundle --format=iife --target=es2020 --outfile=dist/popup.js --watch",
+    "pack:chrome": "npm run build && node scripts/pack.js chrome",
+    "pack:firefox": "npm run build && node scripts/pack.js firefox"
   },
   "devDependencies": {
+    "archiver": "^7.0.1",
     "esbuild": "^0.25.0"
   }
 }

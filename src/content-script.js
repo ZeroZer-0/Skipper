@@ -6,7 +6,6 @@
  *   • Site detection from sites.json
  *   • Auto-clicking skip/next buttons with cooldown + health tracking
  *   • Debug mode (outlines + debug panel)
- *   • Element picker (delegates UI to core/picker.js)
  *   • Candidate detection (delegates scoring to core/candidates.js)
  *   • Cross-frame aggregation via postMessage
  */
@@ -17,8 +16,7 @@ if (typeof browser === 'undefined') {
 }
 
 import { queryInTree, safeQuery, isElementVisible, generateSelector } from './core/dom.js';
-import { activatePicker, deactivatePicker }                           from './core/picker.js';
-import { scanForCandidates }                                          from './core/candidates.js';
+import { scanForCandidates } from './core/candidates.js';
 
 // ─── State ────────────────────────────────────────────────────────────────────
 
@@ -32,7 +30,6 @@ let buttonToggles = {};  // { siteId: { label: boolean } }
 let settings = {
   extensionEnabled: true,
   debugMode:        false,
-  pickerMode:       false,
 };
 
 // Health tracking — written to storage in batches.
@@ -258,7 +255,6 @@ function onMutation() {
 
 function runCheck() {
   if (!currentSiteId || !settings.extensionEnabled) return;
-  if (settings.pickerMode) return;
   if (settings.debugMode) applyHighlights();
   else runClicks();
   if (candidateWatchEnabled) runCandidateScan();
@@ -310,37 +306,12 @@ function applySettings() {
   if (!settings.extensionEnabled || !currentSiteId) {
     stopObserving();
     clearHighlights();
-    deactivatePicker();
     return;
   }
 
-  if (settings.pickerMode) {
-    stopObserving();
-    activatePicker({
-      hint:     'Open Skipper to label and save it.',
-      onPick:   ({ selector, label }) => {
-        const result = {
-          action:   'elementPicked',
-          selector,
-          label,
-          siteId:   currentSiteId,
-          isIframe: !IS_TOP_FRAME,
-          frameUrl: window.location.href,
-        };
-        browser.storage.local.set({ pickerMode: false, lastPickedButton: result });
-        browser.runtime.sendMessage(result).catch(() => {});
-      },
-      onCancel: () => {
-        browser.storage.local.set({ pickerMode: false });
-        browser.runtime.sendMessage({ action: 'pickerCancelled' }).catch(() => {});
-      },
-    });
-  } else {
-    deactivatePicker();
-    clearHighlights();
-    startObserving();
-    candidateWatchEnabled = true;
-  }
+  clearHighlights();
+  startObserving();
+  candidateWatchEnabled = true;
 }
 
 // ─── Message listener ─────────────────────────────────────────────────────────
@@ -352,17 +323,6 @@ browser.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
       if (msg.settings.customButtons !== undefined) customButtons = msg.settings.customButtons;
       if (msg.settings.buttonToggles !== undefined) buttonToggles = msg.settings.buttonToggles;
       Object.assign(settings, msg.settings);
-      applySettings();
-      break;
-
-    case 'activatePicker':
-      settings.pickerMode = true;
-      applySettings();
-      break;
-
-    case 'deactivatePicker':
-      settings.pickerMode = false;
-      deactivatePicker();
       applySettings();
       break;
 
@@ -476,32 +436,40 @@ async function init() {
     // 2. Load persisted settings.
     const stored = await browser.storage.local.get([
       'extensionEnabled', 'sites', 'debugMode',
-      'customButtons', 'buttonToggles', 'pickerMode', 'healthData',
+      'customButtons', 'buttonToggles', 'healthData',
     ]);
 
     settings.extensionEnabled = stored.extensionEnabled !== false;
     settings.debugMode        = stored.debugMode  === true;
-    settings.pickerMode       = stored.pickerMode === true;
     customButtons             = stored.customButtons || {};
     buttonToggles             = stored.buttonToggles || {};
     healthCache               = stored.healthData    || {};
 
     if (!settings.extensionEnabled) { log('Extension disabled'); return; }
 
-    // 3. Detect site.
+    // 3. Detect site — first try the built-in sites.json config, then fall back
+    //    to custom buttons stored under the current hostname (so local buttons
+    //    work on sites not listed in sites.json once <all_urls> is granted).
     const match = detectSite();
-    if (!match) {
-      log(`No site match for: ${window.location.hostname}` +
-          (!IS_TOP_FRAME ? ` (iframe, top: ${getTopHostname()})` : ''));
-      return;
+    if (match) {
+      const [siteId, site] = match;
+      const enabledSites   = stored.sites || {};
+      if (enabledSites[siteId] === false) { log(`${siteId} disabled by user`); return; }
+      currentSiteId = siteId;
+      currentSite   = site;
+    } else {
+      const hostname = window.location.hostname;
+      const hostCustom = customButtons[hostname];
+      if (!hostCustom || hostCustom.length === 0) {
+        log(`No site match for: ${hostname}` +
+            (!IS_TOP_FRAME ? ` (iframe, top: ${getTopHostname()})` : ''));
+        return;
+      }
+      // Activate with only the locally-saved buttons for this hostname.
+      currentSiteId = hostname;
+      currentSite   = null;
+      log(`Custom-only activation on: ${hostname}`);
     }
-
-    const [siteId, site] = match;
-    const enabledSites   = stored.sites || {};
-    if (enabledSites[siteId] === false) { log(`${siteId} disabled by user`); return; }
-
-    currentSiteId = siteId;
-    currentSite   = site;
 
     log(`Active on "${siteId}" — ${IS_TOP_FRAME ? 'main frame' : 'iframe @ ' + window.location.hostname}`);
     applySettings();
