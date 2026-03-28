@@ -525,11 +525,13 @@
           selectorTestResult.style.color = found ? "#4caf50" : "#555";
           selectorTestResult.textContent = found ? `Found ${resp.count > 0 ? resp.count : 1} element(s)${resp.shadowHit ? " (shadow DOM)" : ""}${resp.inIframe ? " (in iframe)" : ""}` : "No elements matched";
           saveToLocalWrap.style.display = "block";
+          saveToLocalWrap.scrollIntoView({ block: "nearest" });
         }
       } catch (_) {
         selectorTestResult.style.color = "#444";
         selectorTestResult.textContent = "Not on a supported page.";
         saveToLocalWrap.style.display = "block";
+        saveToLocalWrap.scrollIntoView({ block: "nearest" });
       }
     }, 300);
   });
