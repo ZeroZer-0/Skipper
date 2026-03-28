@@ -92,8 +92,9 @@
     "domains": ["tv.apple.com"],
     "searchShadowDom": true,
     "buttons": [
-      { "label": "Skip Intro",   "selector": "button[data-testid=\"skip-button\"]", "delayMs": 500 },
-      { "label": "Next Episode", "selector": "button[data-testid=\"up-next-button\"]" }
+      { "label": "Skip Intro",             "selector": "button[data-testid=\"skip-button\"]", "delayMs": 500 },
+      { "label": "Skip Beginning Trailer", "selector": "button[data-testid=\"skip-overlay-button-skip-button\"]" },
+      { "label": "Next Episode",           "selector": "button[data-testid=\"up-next-button\"]" }
     ]
   },
 

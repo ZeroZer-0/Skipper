@@ -604,11 +604,12 @@ selectorTestInput.addEventListener('input', () => {
           : 'Invalid selector — use CSS syntax e.g. [attr="val"], .class, button';
         saveToLocalWrap.style.display = 'none';
       } else {
-        selectorTestResult.style.color = resp.count > 0 ? '#4caf50' : '#555';
-        selectorTestResult.textContent = resp.count > 0
-          ? `Found ${resp.count} element(s)${resp.shadowHit ? ' (shadow DOM)' : ''}${resp.inIframe ? ' (in iframe)' : ''}`
+        const found = resp.count > 0 || resp.shadowHit;
+        selectorTestResult.style.color = found ? '#4caf50' : '#555';
+        selectorTestResult.textContent = found
+          ? `Found ${resp.count > 0 ? resp.count : 1} element(s)${resp.shadowHit ? ' (shadow DOM)' : ''}${resp.inIframe ? ' (in iframe)' : ''}`
           : 'No elements matched';
-        saveToLocalWrap.style.display = resp.count > 0 ? 'block' : 'none';
+        saveToLocalWrap.style.display = found ? 'block' : 'none';
       }
     } catch (_) {
       selectorTestResult.style.color = '#444';
