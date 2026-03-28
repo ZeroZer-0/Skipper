@@ -1,6 +1,6 @@
 {
   "name": "skipper",
-  "version": "4.0.0",
+  "version": "4.1.0",
   "private": true,
   "scripts": {
     "build": "npx esbuild src/content-script.js --bundle --format=iife --target=es2020 --outfile=dist/content-script.js && npx esbuild src/popup.js --bundle --format=iife --target=es2020 --outfile=dist/popup.js",

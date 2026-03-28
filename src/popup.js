@@ -587,10 +587,9 @@ let testDebounce = null;
 selectorTestInput.addEventListener('input', () => {
   clearTimeout(testDebounce);
   browser.storage.local.set({ selectorTestValue: selectorTestInput.value });
-  saveToLocalWrap.style.display = 'none';
   testDebounce = setTimeout(async () => {
     const sel = selectorTestInput.value.trim();
-    if (!sel) { selectorTestResult.textContent = ''; return; }
+    if (!sel) { selectorTestResult.textContent = ''; saveToLocalWrap.style.display = 'none'; return; }
     try {
       const resp = await browser.tabs.sendMessage(currentTabId, { action: 'testSelector', selector: sel });
       if (resp.error) {
@@ -604,16 +603,19 @@ selectorTestInput.addEventListener('input', () => {
           : 'Invalid selector — use CSS syntax e.g. [attr="val"], .class, button';
         saveToLocalWrap.style.display = 'none';
       } else {
-        selectorTestResult.style.color = resp.count > 0 ? '#4caf50' : '#555';
-        selectorTestResult.textContent = resp.count > 0
-          ? `Found ${resp.count} element(s)${resp.shadowHit ? ' (shadow DOM)' : ''}${resp.inIframe ? ' (in iframe)' : ''}`
+        const found = resp.count > 0 || resp.shadowHit;
+        selectorTestResult.style.color = found ? '#4caf50' : '#555';
+        selectorTestResult.textContent = found
+          ? `Found ${resp.count > 0 ? resp.count : 1} element(s)${resp.shadowHit ? ' (shadow DOM)' : ''}${resp.inIframe ? ' (in iframe)' : ''}`
           : 'No elements matched';
-        saveToLocalWrap.style.display = resp.count > 0 ? 'block' : 'none';
+        saveToLocalWrap.style.display = 'block';
+        saveToLocalWrap.scrollIntoView({ block: 'nearest' });
       }
     } catch (_) {
       selectorTestResult.style.color = '#444';
       selectorTestResult.textContent = 'Not on a supported page.';
-      saveToLocalWrap.style.display = 'none';
+      saveToLocalWrap.style.display = 'block';
+      saveToLocalWrap.scrollIntoView({ block: 'nearest' });
     }
   }, 300);
 });
