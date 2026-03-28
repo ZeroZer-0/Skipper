@@ -587,10 +587,9 @@ let testDebounce = null;
 selectorTestInput.addEventListener('input', () => {
   clearTimeout(testDebounce);
   browser.storage.local.set({ selectorTestValue: selectorTestInput.value });
-  saveToLocalWrap.style.display = 'none';
   testDebounce = setTimeout(async () => {
     const sel = selectorTestInput.value.trim();
-    if (!sel) { selectorTestResult.textContent = ''; return; }
+    if (!sel) { selectorTestResult.textContent = ''; saveToLocalWrap.style.display = 'none'; return; }
     try {
       const resp = await browser.tabs.sendMessage(currentTabId, { action: 'testSelector', selector: sel });
       if (resp.error) {
@@ -609,12 +608,12 @@ selectorTestInput.addEventListener('input', () => {
         selectorTestResult.textContent = found
           ? `Found ${resp.count > 0 ? resp.count : 1} element(s)${resp.shadowHit ? ' (shadow DOM)' : ''}${resp.inIframe ? ' (in iframe)' : ''}`
           : 'No elements matched';
-        saveToLocalWrap.style.display = found ? 'block' : 'none';
+        saveToLocalWrap.style.display = 'block';
       }
     } catch (_) {
       selectorTestResult.style.color = '#444';
       selectorTestResult.textContent = 'Not on a supported page.';
-      saveToLocalWrap.style.display = 'none';
+      saveToLocalWrap.style.display = 'block';
     }
   }, 300);
 });
