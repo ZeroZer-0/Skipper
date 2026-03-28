@@ -11,7 +11,8 @@ if (target !== 'chrome' && target !== 'firefox') {
 }
 
 const root = path.resolve(__dirname, '..');
-const outFile = path.join(root, `skipper-4.0.0-${target}.zip`);
+const { version } = require('../package.json');
+const outFile = path.join(root, `skipper-${version}-${target}.zip`);
 const manifestSrc = target === 'firefox'
   ? path.join(root, 'manifest.firefox.json')
   : path.join(root, 'manifest.json');
