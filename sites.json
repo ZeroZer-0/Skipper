@@ -27,6 +27,7 @@
     "buttons": [
       { "label": "Skip Recap",        "selector": "button.skip__button[aria-label=\"SKIP RECAP\"]" },
       { "label": "Skip Intro",        "selector": "button.skip__button[aria-label=\"SKIP INTRO\"]" },
+      { "label": "Skip",              "selector": "skip-button" },
       { "label": "Next Episode",      "selector": "button.skip__button:not([aria-label])" },
       { "label": "Next Episode (Alt)","selector": "button[data-testid=\"icon-restart\"]" }
     ]
