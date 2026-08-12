@@ -1,5 +1,7 @@
 # Skipper
 
+This extension was created a while ago and is no longer actively maintained. While the extension includes features that extend usability, its core functionality may currently be broken or will become so, and it likely won't be fixed.
+
 Automatically skips intros, recaps, and next episode prompts on supported streaming sites.
 
 ## Supported Sites
